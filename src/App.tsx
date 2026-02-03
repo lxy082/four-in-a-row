@@ -5,6 +5,7 @@ import Controls from './ui/Controls';
 import StatusBar from './ui/StatusBar';
 import ThreeBoard from './ui/ThreeBoard';
 import { SIZE } from './engine/lines';
+import { getPlayerMapping } from './engine/playerMapping';
 
 const playerLabel = (player: Player) => (player === 1 ? '红方' : '蓝方');
 
@@ -12,10 +13,12 @@ const App = () => {
   const engineRef = useRef(new Engine());
   const workerRef = useRef<Worker | null>(null);
   const [version, setVersion] = useState(0);
-  const [currentPlayer, setCurrentPlayer] = useState<Player>(1);
+  const [currentTurn, setCurrentTurn] = useState<Player>(1);
   const [mode, setMode] = useState<'pvp' | 'ai'>('pvp');
   const [difficulty, setDifficulty] = useState<Difficulty>('medium');
   const [humanFirst, setHumanFirst] = useState(true);
+  const [humanPlayer, setHumanPlayer] = useState<Player>(1);
+  const [aiPlayer, setAiPlayer] = useState<Player>(-1);
   const [timeControl, setTimeControl] = useState<'off' | '30' | '60'>('off');
   const [timeLeftMs, setTimeLeftMs] = useState<number | null>(null);
   const [gameStatus, setGameStatus] = useState<'playing' | 'won' | 'draw'>('playing');
@@ -33,6 +36,8 @@ const App = () => {
   const aiRequestRef = useRef(false);
   const turnDeadlineRef = useRef<number | null>(null);
   const aiTimeoutRef = useRef<number | null>(null);
+  const humanPlayerRef = useRef<Player>(1);
+  const aiPlayerRef = useRef<Player>(-1);
 
   useEffect(() => {
     workerRef.current = new Worker(new URL('./aiWorker.js', import.meta.url), { type: 'module' });
@@ -51,7 +56,7 @@ const App = () => {
       if (!nextMove) {
         return;
       }
-      applyMove(nextMove.x, nextMove.y, true);
+      applyMove(nextMove.x, nextMove.y, aiPlayerRef.current, true);
     };
     workerRef.current.onerror = (error) => {
       console.error('AI worker failed:', error);
@@ -59,26 +64,29 @@ const App = () => {
       aiRequestRef.current = false;
       const fallback = pickFallbackMove();
       if (fallback && gameStatusRef.current === 'playing') {
-        applyMove(fallback.x, fallback.y, true);
+        applyMove(fallback.x, fallback.y, aiPlayerRef.current, true);
       }
     };
     return () => workerRef.current?.terminate();
   }, []);
 
-  const aiPlayer: Player = humanFirst ? -1 : 1;
+  useEffect(() => {
+    resetGame();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, humanFirst]);
 
   useEffect(() => {
     if (
       mode === 'ai' &&
       gameStatus === 'playing' &&
-      currentPlayer === aiPlayer &&
+      currentTurn === aiPlayer &&
       !aiThinking &&
       !isAnimating &&
       !moveInProgressRef.current
     ) {
       requestAiMove();
     }
-  }, [mode, gameStatus, currentPlayer, aiPlayer, aiThinking, isAnimating, timeLeftMs]);
+  }, [mode, gameStatus, currentTurn, aiPlayer, aiThinking, isAnimating, timeLeftMs]);
 
   useEffect(() => {
     if (gameStatus !== 'playing') {
@@ -95,7 +103,7 @@ const App = () => {
     const deadline = performance.now() + baseMs;
     turnDeadlineRef.current = deadline;
     setTimeLeftMs(baseMs);
-  }, [currentPlayer, gameStatus, timeControl]);
+  }, [currentTurn, gameStatus, timeControl]);
 
   useEffect(() => {
     if (gameStatus !== 'playing' || timeControl === 'off') {
@@ -108,7 +116,7 @@ const App = () => {
       const remaining = Math.max(0, Math.ceil(turnDeadlineRef.current - performance.now()));
       setTimeLeftMs(remaining);
       if (remaining <= 0) {
-        const loser = currentPlayer;
+        const loser = currentTurn;
         const winnerPlayer: Player = loser === 1 ? -1 : 1;
         setWinner(winnerPlayer);
         setGameStatus('won');
@@ -119,7 +127,7 @@ const App = () => {
       }
     }, 200);
     return () => window.clearInterval(interval);
-  }, [currentPlayer, gameStatus, timeControl]);
+  }, [currentTurn, gameStatus, timeControl]);
 
   useEffect(() => {
     winnerRef.current = winner;
@@ -144,7 +152,15 @@ const App = () => {
   const resetGame = () => {
     engineRef.current = new Engine();
     setVersion((v) => v + 1);
-    setCurrentPlayer(1);
+    const mapping = getPlayerMapping(mode, humanFirst);
+    if (mode === 'ai' && mapping.human === mapping.ai) {
+      console.error('Invalid player mapping: human and AI players are identical.');
+    }
+    setHumanPlayer(mapping.human);
+    setAiPlayer(mapping.ai);
+    humanPlayerRef.current = mapping.human;
+    aiPlayerRef.current = mapping.ai;
+    setCurrentTurn(mapping.firstTurn);
     setWinner(null);
     setGameStatus('playing');
     setWinLines([]);
@@ -195,7 +211,7 @@ const App = () => {
         setAiThinking(false);
         const fallback = pickFallbackMove();
         if (fallback) {
-          applyMove(fallback.x, fallback.y, true);
+          applyMove(fallback.x, fallback.y, aiPlayerRef.current, true);
         }
       }
     }, timeLimitMs + 100);
@@ -203,34 +219,40 @@ const App = () => {
       grid: Array.from(engineRef.current.grid),
       heights: Array.from(engineRef.current.heights),
       moves: engineRef.current.moves,
-      player: currentPlayer,
+      player: aiPlayerRef.current,
       difficulty,
       timeLimitMs
     });
   };
 
-  const applyMove = (x: number, y: number, fromAi = false) => {
+  const applyMove = (x: number, y: number, player: Player, fromAi = false) => {
     if (gameStatus !== 'playing' || aiThinking || isAnimating) {
       return;
     }
     if (moveInProgressRef.current) {
       return;
     }
-    if (mode === 'ai' && !fromAi) {
-      const humanPlayer: Player = humanFirst ? 1 : -1;
-      if (currentPlayer !== humanPlayer) {
-        return;
-      }
+    if (player !== currentTurn) {
+      console.error('Move rejected: player does not match current turn.', { player, currentTurn });
+      return;
+    }
+    if (mode === 'ai' && fromAi && player !== aiPlayer) {
+      console.error('Move rejected: AI attempted to play human color.', { player, aiPlayer });
+      return;
+    }
+    if (mode === 'ai' && !fromAi && player !== humanPlayer) {
+      console.error('Move rejected: Human attempted to play AI color.', { player, humanPlayer });
+      return;
     }
     moveInProgressRef.current = true;
-    const result = engineRef.current.makeMove(x, y, currentPlayer);
+    const result = engineRef.current.makeMove(x, y, player);
     if (!result.ok) {
       setToast(result.message ?? '该位置已满，请重新选择');
       setTimeout(() => setToast(null), 1200);
       moveInProgressRef.current = false;
       return;
     }
-    setLastMove({ x, y, z: result.z!, player: currentPlayer });
+    setLastMove({ x, y, z: result.z!, player });
     setVersion((v) => v + 1);
     setSelectedMove(null);
     setIsAnimating(true);
@@ -239,7 +261,7 @@ const App = () => {
       moveInProgressRef.current = false;
     }, 500);
     if (result.win) {
-      setWinner(currentPlayer);
+      setWinner(player);
       setWinLines(result.winLines ?? []);
       setGameStatus('won');
       return;
@@ -248,7 +270,7 @@ const App = () => {
       setGameStatus('draw');
       return;
     }
-    setCurrentPlayer((prev) => (prev === 1 ? -1 : 1));
+    setCurrentTurn((prev) => (prev === 1 ? -1 : 1));
   };
 
   const grid = engineRef.current.grid;
@@ -264,7 +286,7 @@ const App = () => {
     ? `胜者：${playerLabel(winner)}`
     : gameStatus === 'draw'
     ? '平局：棋盘已满'
-    : `当前回合：${playerLabel(currentPlayer)}`;
+    : `当前回合：${playerLabel(currentTurn)}`;
 
   const timeLeftDisplay =
     timeLeftMs === null ? '未开启' : `${Math.ceil(timeLeftMs / 1000)}s`;
@@ -280,7 +302,7 @@ const App = () => {
     !aiThinking &&
     Boolean(selectedMove) &&
     !isSelectedFull &&
-    (mode === 'pvp' || currentPlayer === (humanFirst ? 1 : -1));
+    (mode === 'pvp' || currentTurn === humanPlayer);
 
   return (
     <div className="app">
@@ -323,12 +345,10 @@ const App = () => {
             isAnimating={isAnimating}
             onModeChange={(next) => {
               setMode(next);
-              resetGame();
             }}
             onDifficultyChange={setDifficulty}
             onHumanFirstChange={(value) => {
               setHumanFirst(value);
-              resetGame();
             }}
             onTimeControlChange={(value) => {
               setTimeControl(value);
@@ -337,7 +357,7 @@ const App = () => {
             onReset={resetGame}
             onConfirmMove={() => {
               if (selectedMove) {
-                applyMove(selectedMove.x, selectedMove.y);
+                applyMove(selectedMove.x, selectedMove.y, currentTurn);
               }
             }}
           />

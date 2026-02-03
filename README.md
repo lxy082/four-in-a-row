@@ -12,28 +12,20 @@
 - 模式：PVP 或人机对战（支持 AI 先手/后手）。
 - 计时模式：支持 OFF / 30s / 60s，每回合倒计时结束未确认落子即判负。
 
-## 本地运行
-```bash
-npm install
-npm run dev
-```
-
 ## 最快运行（无需 npm）
 1. 运行脚本：`run_server.sh`（Mac/Linux）或 `run_server.bat`（Windows），或执行 `python server.py`。
 2. 浏览器打开 <http://localhost:8000>。
 
 > `dist/` 是已构建的静态产物，使用 CDN import map 加载依赖，因此需要联网访问。
 
-## 构建与本地静态启动
-```bash
-npm run build
-npx http-server dist -p 8000
-```
-> 也可使用 `python -m http.server 8000` 在 `dist/` 下启动（无需 npm）。
+## GitHub Pages（Deploy from branch）
+1. 推送本仓库的 `gh-pages` 分支到 GitHub（该分支仅包含可静态托管文件）。
+2. 在 GitHub 仓库中进入 **Settings → Pages**。
+3. **Source** 选择 **Deploy from a branch**。
+4. **Branch** 选择 `gh-pages`，目录选择 `/ (root)`。
+5. 保存后等待部署完成，访问显示的 Pages URL 即可。
 
-## 部署建议
-- **GitHub Pages**：使用 `npm run build` 生成 `dist/`，将其发布到 `gh-pages` 分支。
-- **Vercel/Netlify**：构建命令 `npm run build`，输出目录 `dist`。
+> 所有资源使用相对路径，确保 Pages 子路径（例如 `/repo-name/`）正常加载。
 
 ## AI 设计说明
 AI 采用 Minimax + AlphaBeta + 迭代加深，并加入“人类感”策略：
@@ -61,7 +53,11 @@ AI 采用 Minimax + AlphaBeta + 迭代加深，并加入“人类感”策略：
 - **AI 不再走的根因**：此前 AI 触发依赖仅在回合切换时运行，但落子动画期间 `isAnimating` 为 true，导致 AI 请求被短路且不会在动画结束后重新触发。
 - **修复**：改为在 `gameStatus/turn/isAnimating/aiThinking` 条件满足时立即触发 AI，并加入超时 fallback（中心优先合法步），确保每回合都会落子。
 
-## 测试
+### 阵营颜色错乱修复说明
+- **原因**：人机模式下没有明确的 `humanPlayer/aiPlayer/currentTurn` 单一真相源，导致 AI 使用了当前回合颜色或被覆盖的玩家颜色。
+- **修复**：引入固定的阵营映射（`humanPlayer` 与 `aiPlayer`）并在每次开局统一初始化，所有落子必须满足 `player === currentTurn` 且 AI 落子必须使用 `aiPlayer`，并在开发时输出断言错误提示。
+
+## 测试（可选）
 ```bash
 npm run test
 ```
