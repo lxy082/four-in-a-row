@@ -1,11 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Engine, type Player } from './engine/board';
 import type { Difficulty } from './engine/ai';
+import type { Weights } from './engine/weights';
 import Controls from './ui/Controls';
 import StatusBar from './ui/StatusBar';
 import ThreeBoard from './ui/ThreeBoard';
 import { SIZE } from './engine/lines';
 import { getPlayerMapping } from './engine/playerMapping';
+import { loadProfile, saveProfile, updateProfileMove, updateProfileGame, clearProfile, getProfileSummary } from './engine/profile';
+import { loadMemory, saveMemory, updateMemory, encodeState, captureRecentStates, pickMemoryMoves, clearMemory } from './engine/memory';
+import { adjustWeights, clearWeights, loadWeights, saveWeights, getDefaultWeights } from './engine/weights';
 
 const playerLabel = (player: Player) => (player === 1 ? '红方' : '蓝方');
 
@@ -19,6 +23,12 @@ const App = () => {
   const [humanFirst, setHumanFirst] = useState(true);
   const [humanPlayer, setHumanPlayer] = useState<Player>(1);
   const [aiPlayer, setAiPlayer] = useState<Player>(-1);
+  const [learningEnabled, setLearningEnabled] = useState(true);
+  const [profile, setProfile] = useState(loadProfile());
+  const [weights, setWeights] = useState<Weights>(loadWeights());
+  const [memory, setMemory] = useState(loadMemory());
+  const [randomIntensity, setRandomIntensity] = useState(0.6);
+  const [randomSeed, setRandomSeed] = useState(1);
   const [timeControl, setTimeControl] = useState<'off' | '30' | '60'>('off');
   const [timeLeftMs, setTimeLeftMs] = useState<number | null>(null);
   const [gameStatus, setGameStatus] = useState<'playing' | 'won' | 'draw'>('playing');
@@ -39,6 +49,7 @@ const App = () => {
   const humanPlayerRef = useRef<Player>(1);
   const aiPlayerRef = useRef<Player>(-1);
   const aiRequestTurnRef = useRef<Player | null>(null);
+  const historyRef = useRef<Array<{ grid: Int8Array; move: { x: number; y: number }; turn: Player }>>([]);
 
   useEffect(() => {
     workerRef.current = new Worker(new URL('./aiWorker.js', import.meta.url), { type: 'module' });
@@ -79,6 +90,18 @@ const App = () => {
     };
     return () => workerRef.current?.terminate();
   }, []);
+
+  useEffect(() => {
+    saveProfile(profile);
+  }, [profile]);
+
+  useEffect(() => {
+    saveMemory(memory);
+  }, [memory]);
+
+  useEffect(() => {
+    saveWeights(weights);
+  }, [weights]);
 
   useEffect(() => {
     resetGame();
@@ -159,6 +182,25 @@ const App = () => {
     }
   }, [gameStatus]);
 
+  useEffect(() => {
+    if (gameStatus === 'won' || gameStatus === 'draw') {
+      if (!learningEnabled) {
+        return;
+      }
+      const outcome: 'win' | 'loss' | 'draw' =
+        gameStatus === 'draw' ? 'draw' : winner === aiPlayer ? 'win' : 'loss';
+      const recent = captureRecentStates(historyRef.current, 10);
+      let nextMemory = memory;
+      recent.forEach((state) => {
+        const key = encodeState(state.grid, state.turn);
+        nextMemory = updateMemory(nextMemory, key, state.move, outcome);
+      });
+      setMemory(nextMemory);
+      setWeights(adjustWeights(weights, outcome));
+      setProfile((prev) => updateProfileGame(prev, true));
+    }
+  }, [gameStatus, learningEnabled, winner, aiPlayer, memory, weights]);
+
 
   const resetGame = () => {
     engineRef.current = new Engine();
@@ -183,6 +225,7 @@ const App = () => {
     setTimeLeftMs(null);
     turnDeadlineRef.current = null;
     moveInProgressRef.current = false;
+    historyRef.current = [];
     if (aiTimeoutRef.current) {
       window.clearTimeout(aiTimeoutRef.current);
       aiTimeoutRef.current = null;
@@ -239,13 +282,24 @@ const App = () => {
         }
       }
     }, timeLimitMs + 100);
+    const memoryKey = encodeState(engineRef.current.grid, currentTurn);
+    const memoryMoves = pickMemoryMoves(memory, memoryKey).map((entry) => ({
+      x: entry.x,
+      y: entry.y,
+      score: entry.wins - entry.losses + entry.draws * 0.2
+    }));
     workerRef.current.postMessage({
       grid: Array.from(engineRef.current.grid),
       heights: Array.from(engineRef.current.heights),
       moves: engineRef.current.moves,
       player: aiPlayerRef.current,
       difficulty,
-      timeLimitMs
+      timeLimitMs,
+      weights,
+      profile,
+      memoryMoves,
+      randomSeed,
+      randomIntensity
     });
   };
 
@@ -275,6 +329,13 @@ const App = () => {
       setTimeout(() => setToast(null), 1200);
       moveInProgressRef.current = false;
       return;
+    }
+    historyRef.current = [
+      ...historyRef.current,
+      { grid: new Int8Array(engineRef.current.grid), move: { x, y }, turn: currentTurn }
+    ];
+    if (learningEnabled) {
+      setProfile((prev) => updateProfileMove(prev, { x, y, z: result.z! }, player, humanPlayer));
     }
     setLastMove({ x, y, z: result.z!, player });
     setVersion((v) => v + 1);
@@ -360,6 +421,10 @@ const App = () => {
             difficulty={difficulty}
             humanFirst={humanFirst}
             timeControl={timeControl}
+            learningEnabled={learningEnabled}
+            profileSummary={getProfileSummary(profile)}
+            randomIntensity={randomIntensity}
+            randomSeed={randomSeed}
             selectedMove={selectedMove}
             selectedHeight={selectedHeight}
             hoveredMove={hovered}
@@ -378,6 +443,21 @@ const App = () => {
               setTimeControl(value);
               resetGame();
             }}
+            onLearningToggle={(value) => setLearningEnabled(value)}
+            onClearProfile={() => {
+              clearProfile();
+              setProfile(loadProfile());
+            }}
+            onClearMemory={() => {
+              clearMemory();
+              setMemory(loadMemory());
+            }}
+            onResetWeights={() => {
+              clearWeights();
+              setWeights(getDefaultWeights());
+            }}
+            onRandomIntensityChange={setRandomIntensity}
+            onRandomSeedChange={setRandomSeed}
             onReset={resetGame}
             onConfirmMove={() => {
               if (selectedMove) {

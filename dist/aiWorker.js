@@ -3,10 +3,18 @@ import { computeBestMove } from './engine/ai';
 
 self.onmessage = (event) => {
   try {
-    const { grid, player, difficulty, timeLimitMs } = event.data;
+    const { grid, player, difficulty, timeLimitMs, weights, profile, memoryMoves, randomIntensity, randomSeed } = event.data;
     const engine = new Engine();
     engine.loadPosition(new Int8Array(grid));
-    const result = computeBestMove(engine, player, difficulty, { timeLimitMs, hardLimitMs: 25000 });
+    const result = computeBestMove(engine, player, difficulty, {
+      timeLimitMs,
+      hardLimitMs: 25000,
+      weights,
+      profile,
+      memoryMoves,
+      randomIntensity,
+      randomSeed
+    });
     const fallbackMoves = engine.getValidMoves();
     fallbackMoves.sort((a, b) => {
       const da = Math.abs(a.x - 2) + Math.abs(a.y - 2);

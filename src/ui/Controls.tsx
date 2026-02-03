@@ -5,6 +5,10 @@ interface ControlsProps {
   difficulty: Difficulty;
   humanFirst: boolean;
   timeControl: 'off' | '30' | '60';
+  learningEnabled: boolean;
+  profileSummary: { games: number; moves: number } | null;
+  randomIntensity: number;
+  randomSeed: number;
   selectedMove: { x: number; y: number } | null;
   selectedHeight: number | null;
   hoveredMove: { x: number; y: number } | null;
@@ -16,6 +20,12 @@ interface ControlsProps {
   onDifficultyChange: (difficulty: Difficulty) => void;
   onHumanFirstChange: (humanFirst: boolean) => void;
   onTimeControlChange: (value: 'off' | '30' | '60') => void;
+  onLearningToggle: (value: boolean) => void;
+  onClearProfile: () => void;
+  onClearMemory: () => void;
+  onResetWeights: () => void;
+  onRandomIntensityChange: (value: number) => void;
+  onRandomSeedChange: (value: number) => void;
   onReset: () => void;
   onConfirmMove: () => void;
 }
@@ -25,6 +35,10 @@ const Controls = ({
   difficulty,
   humanFirst,
   timeControl,
+  learningEnabled,
+  profileSummary,
+  randomIntensity,
+  randomSeed,
   selectedMove,
   selectedHeight,
   hoveredMove,
@@ -36,6 +50,12 @@ const Controls = ({
   onDifficultyChange,
   onHumanFirstChange,
   onTimeControlChange,
+  onLearningToggle,
+  onClearProfile,
+  onClearMemory,
+  onResetWeights,
+  onRandomIntensityChange,
+  onRandomSeedChange,
   onReset,
   onConfirmMove
 }: ControlsProps) => {
@@ -72,6 +92,21 @@ const Controls = ({
             人机
           </button>
         </div>
+        <div className="selection-detail">随机强度：{randomIntensity.toFixed(2)}</div>
+        <input
+          type="range"
+          min="0"
+          max="1"
+          step="0.05"
+          value={randomIntensity}
+          onChange={(event) => onRandomIntensityChange(Number(event.target.value))}
+        />
+        <div className="selection-detail">随机种子：{randomSeed}</div>
+        <input
+          type="number"
+          value={randomSeed}
+          onChange={(event) => onRandomSeedChange(Number(event.target.value) || 0)}
+        />
       </div>
       {mode === 'ai' && (
         <>
@@ -120,6 +155,39 @@ const Controls = ({
               {option.label}
             </button>
           ))}
+        </div>
+      </div>
+      <div className="control-group">
+        <label>学习模式</label>
+        <div className="button-row">
+          <button
+            type="button"
+            className={learningEnabled ? 'active' : ''}
+            onClick={() => onLearningToggle(true)}
+          >
+            开启
+          </button>
+          <button
+            type="button"
+            className={!learningEnabled ? 'active' : ''}
+            onClick={() => onLearningToggle(false)}
+          >
+            关闭
+          </button>
+        </div>
+        <div className="selection-detail">
+          已学习对局：{profileSummary?.games ?? 0}，累计落子：{profileSummary?.moves ?? 0}
+        </div>
+        <div className="button-row">
+          <button type="button" onClick={onClearProfile}>
+            清空学习
+          </button>
+          <button type="button" onClick={onClearMemory}>
+            清空经验库
+          </button>
+          <button type="button" onClick={onResetWeights}>
+            重置权重
+          </button>
         </div>
       </div>
       <button type="button" className="reset" onClick={onReset}>

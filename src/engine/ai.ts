@@ -1,6 +1,11 @@
 import { Engine, type Player } from './board';
 import { evaluateGrid } from './eval';
 import { SIZE } from './lines';
+import type { Weights } from './weights';
+import type { ProfileData } from './profile';
+import { detectThreats } from './threat';
+import { softmaxSample } from './random';
+import { columnIndex } from './memory';
 
 export type Difficulty = 'easy' | 'medium' | 'hard';
 
@@ -12,24 +17,30 @@ export interface AiResult {
 export interface AiOptions {
   timeLimitMs?: number;
   hardLimitMs?: number;
+  weights?: Weights;
+  profile?: ProfileData;
+  memoryMoves?: Array<{ x: number; y: number; score: number }>;
+  randomSeed?: number;
+  randomIntensity?: number;
 }
 
 const CENTER_ORDER = Array.from({ length: SIZE }, (_, v) => v).sort(
   (a, b) => Math.abs(a - 2) - Math.abs(b - 2)
 );
 
-const orderedMoves = (engine: Engine) => {
+const orderedMoves = (engine: Engine, profile?: ProfileData) => {
   const moves = engine.getValidMoves();
   moves.sort((a, b) => {
     const ax = Math.abs(a.x - 2) + Math.abs(a.y - 2);
     const bx = Math.abs(b.x - 2) + Math.abs(b.y - 2);
-    return ax - bx;
+    const profileBias = profile ? (profile.heat[columnIndex(a.x, a.y)] ?? 0) - (profile.heat[columnIndex(b.x, b.y)] ?? 0) : 0;
+    return ax - bx - profileBias * 0.02;
   });
   return moves;
 };
 
-const findImmediateWin = (engine: Engine, player: Player) => {
-  for (const move of orderedMoves(engine)) {
+const findImmediateWin = (engine: Engine, player: Player, profile?: ProfileData) => {
+  for (const move of orderedMoves(engine, profile)) {
     const result = engine.makeMove(move.x, move.y, player);
     if (result.ok && result.win) {
       engine.undo();
@@ -40,10 +51,10 @@ const findImmediateWin = (engine: Engine, player: Player) => {
   return null;
 };
 
-const findImmediateBlock = (engine: Engine, player: Player) => {
+const findImmediateBlock = (engine: Engine, player: Player, profile?: ProfileData) => {
   const opponent: Player = player === 1 ? -1 : 1;
   const threats = [] as Array<{ x: number; y: number }>;
-  for (const move of orderedMoves(engine)) {
+  for (const move of orderedMoves(engine, profile)) {
     const result = engine.makeMove(move.x, move.y, opponent);
     if (result.ok && result.win) {
       threats.push(move);
@@ -69,6 +80,17 @@ const chooseRandomTop = (moves: Array<{ x: number; y: number }>, k: number) => {
   return slice[Math.floor(Math.random() * slice.length)];
 };
 
+const isSafeMove = (engine: Engine, move: { x: number; y: number }, player: Player) => {
+  const opponent: Player = player === 1 ? -1 : 1;
+  const result = engine.makeMove(move.x, move.y, player);
+  if (!result.ok) {
+    return false;
+  }
+  const opponentWin = findImmediateWin(engine, opponent);
+  engine.undo();
+  return !opponentWin;
+};
+
 const negamax = (
   engine: Engine,
   depth: number,
@@ -76,10 +98,12 @@ const negamax = (
   beta: number,
   player: Player,
   maxPlayer: Player,
-  deadline: number
+  deadline: number,
+  weights?: Weights,
+  profile?: ProfileData
 ): number => {
   if (performance.now() > deadline) {
-    return evaluateGrid(engine.grid, maxPlayer);
+    return evaluateGrid(engine.grid, maxPlayer, weights);
   }
 
   const winner = engine.checkWinAll();
@@ -87,17 +111,27 @@ const negamax = (
     return winner.player === maxPlayer ? 1000000 - (6 - depth) : -1000000 + (6 - depth);
   }
   if (depth === 0 || engine.moves >= SIZE * SIZE * SIZE) {
-    return evaluateGrid(engine.grid, maxPlayer);
+    return evaluateGrid(engine.grid, maxPlayer, weights);
   }
 
   let best = -Infinity;
-  const moves = orderedMoves(engine);
+  const moves = orderedMoves(engine, profile);
   for (const move of moves) {
     const result = engine.makeMove(move.x, move.y, player);
     if (!result.ok) {
       continue;
     }
-    const score = -negamax(engine, depth - 1, -beta, -alpha, (player === 1 ? -1 : 1) as Player, maxPlayer, deadline);
+    const score = -negamax(
+      engine,
+      depth - 1,
+      -beta,
+      -alpha,
+      (player === 1 ? -1 : 1) as Player,
+      maxPlayer,
+      deadline,
+      weights,
+      profile
+    );
     engine.undo();
     if (score > best) {
       best = score;
@@ -132,13 +166,41 @@ export const computeBestMove = (
     return { move: { x: 2, y: 2 }, depth: 1 };
   }
 
-  const immediate = findImmediateWin(engine, player);
+
+  const immediate = findImmediateWin(engine, player, options.profile);
   if (immediate) {
     return { move: immediate, depth: 1 };
   }
-  const block = findImmediateBlock(engine, player);
+  const block = findImmediateBlock(engine, player, options.profile);
   if (block) {
     return { move: block, depth: 1 };
+  }
+
+  const opponent: Player = player === 1 ? -1 : 1;
+  const threats = detectThreats(engine.grid, engine.heights, player, opponent);
+  if (threats.mustBlock.length > 0) {
+    return { move: threats.mustBlock[0], depth: 1 };
+  }
+  if (threats.forks.length > 0) {
+    return { move: threats.forks[0], depth: 1 };
+  }
+  if (threats.strongThreats.length > 0) {
+    return { move: threats.strongThreats[0], depth: 1 };
+  }
+  if (threats.opportunities.length > 0) {
+    return { move: threats.opportunities[0], depth: 1 };
+  }
+
+  if (options.memoryMoves && options.memoryMoves.length > 0) {
+    const topMemory = options.memoryMoves.slice(0, 3).map((entry) => ({
+      x: entry.x,
+      y: entry.y,
+      score: entry.score
+    }));
+    const sampled = softmaxSample(topMemory, difficulty === 'hard' ? 0.6 : 0.9);
+    if (sampled) {
+      return { move: { x: sampled.x, y: sampled.y }, depth: 1 };
+    }
   }
 
   const deadline = performance.now() + timeLimit;
@@ -152,7 +214,7 @@ export const computeBestMove = (
     }
     let localBest: { x: number; y: number } | null = null;
     let localScore = -Infinity;
-    const moves = orderedMoves(engine);
+    const moves = orderedMoves(engine, options.profile);
 
     for (const move of moves) {
       if (performance.now() > deadline) {
@@ -162,7 +224,17 @@ export const computeBestMove = (
       if (!result.ok) {
         continue;
       }
-      const score = -negamax(engine, depth - 1, -Infinity, Infinity, (player === 1 ? -1 : 1) as Player, player, deadline);
+      const score = -negamax(
+        engine,
+        depth - 1,
+        -Infinity,
+        Infinity,
+        (player === 1 ? -1 : 1) as Player,
+        player,
+        deadline,
+        options.weights,
+        options.profile
+      );
       engine.undo();
       if (score > localScore) {
         localScore = score;
@@ -178,16 +250,42 @@ export const computeBestMove = (
   }
 
   if (difficulty === 'easy') {
-    const moves = orderedMoves(engine);
-    const randomMove = chooseRandomTop(moves, 4);
-    if (randomMove) {
-      return { move: randomMove, depth: 1 };
+    const moves = orderedMoves(engine, options.profile);
+    const scored = moves.map((move) => ({
+      ...move,
+      score: -Math.abs(move.x - 2) - Math.abs(move.y - 2)
+    }));
+    const top = scored.slice(0, Math.min(5, scored.length));
+    const sampled = softmaxSample(top, 1.4);
+    if (sampled) {
+      return { move: { x: sampled.x, y: sampled.y }, depth: 1 };
     }
   }
 
   if (!bestMove) {
-    const moves = orderedMoves(engine);
+    const moves = orderedMoves(engine, options.profile);
     bestMove = moves[0] ?? null;
+  }
+
+  const randomIntensity = options.randomIntensity ?? 0.4;
+  if (bestMove && randomIntensity > 0) {
+    const moves = orderedMoves(engine, options.profile);
+    const topN = difficulty === 'easy' ? 5 : difficulty === 'medium' ? 4 : 3;
+    const candidates = moves.slice(0, Math.min(topN, moves.length));
+    const safe = candidates.filter((move) => (difficulty === 'easy' ? true : isSafeMove(engine, move, player)));
+    const scored = (safe.length > 0 ? safe : candidates).map((move) => {
+      const sim = engine.makeMove(move.x, move.y, player);
+      const score = sim.ok ? evaluateGrid(engine.grid, player, options.weights) : -Infinity;
+      if (sim.ok) {
+        engine.undo();
+      }
+      return { ...move, score };
+    });
+    const temperature = difficulty === 'hard' ? 0.7 : difficulty === 'medium' ? 0.9 : 1.2;
+    const sampled = softmaxSample(scored, temperature + randomIntensity);
+    if (sampled) {
+      return { move: { x: sampled.x, y: sampled.y }, depth: lastCompletedDepth };
+    }
   }
 
   return { move: bestMove, depth: lastCompletedDepth };

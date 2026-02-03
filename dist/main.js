@@ -192,6 +192,10 @@ var Controls = ({
   difficulty,
   humanFirst,
   timeControl,
+  learningEnabled,
+  profileSummary,
+  randomIntensity,
+  randomSeed,
   selectedMove,
   selectedHeight,
   hoveredMove,
@@ -203,6 +207,12 @@ var Controls = ({
   onDifficultyChange,
   onHumanFirstChange,
   onTimeControlChange,
+  onLearningToggle,
+  onClearProfile,
+  onClearMemory,
+  onResetWeights,
+  onRandomIntensityChange,
+  onRandomSeedChange,
   onReset,
   onConfirmMove
 }) => {
@@ -261,7 +271,34 @@ var Controls = ({
                 children: "人机"
               }, undefined, false, undefined, this)
             ]
-          }, undefined, true, undefined, this)
+          }, undefined, true, undefined, this),
+          /* @__PURE__ */ jsxDEV("div", {
+            className: "selection-detail",
+            children: [
+              "随机强度：",
+              randomIntensity.toFixed(2)
+            ]
+          }, undefined, true, undefined, this),
+          /* @__PURE__ */ jsxDEV("input", {
+            type: "range",
+            min: "0",
+            max: "1",
+            step: "0.05",
+            value: randomIntensity,
+            onChange: (event) => onRandomIntensityChange(Number(event.target.value))
+          }, undefined, false, undefined, this),
+          /* @__PURE__ */ jsxDEV("div", {
+            className: "selection-detail",
+            children: [
+              "随机种子：",
+              randomSeed
+            ]
+          }, undefined, true, undefined, this),
+          /* @__PURE__ */ jsxDEV("input", {
+            type: "number",
+            value: randomSeed,
+            onChange: (event) => onRandomSeedChange(Number(event.target.value) || 0)
+          }, undefined, false, undefined, this)
         ]
       }, undefined, true, undefined, this),
       mode === "ai" && /* @__PURE__ */ jsxDEV(Fragment, {
@@ -329,6 +366,60 @@ var Controls = ({
               children: option.label
             }, option.value, false, undefined, this))
           }, undefined, false, undefined, this)
+        ]
+      }, undefined, true, undefined, this),
+      /* @__PURE__ */ jsxDEV("div", {
+        className: "control-group",
+        children: [
+          /* @__PURE__ */ jsxDEV("label", {
+            children: "学习模式"
+          }, undefined, false, undefined, this),
+          /* @__PURE__ */ jsxDEV("div", {
+            className: "button-row",
+            children: [
+              /* @__PURE__ */ jsxDEV("button", {
+                type: "button",
+                className: learningEnabled ? "active" : "",
+                onClick: () => onLearningToggle(true),
+                children: "开启"
+              }, undefined, false, undefined, this),
+              /* @__PURE__ */ jsxDEV("button", {
+                type: "button",
+                className: !learningEnabled ? "active" : "",
+                onClick: () => onLearningToggle(false),
+                children: "关闭"
+              }, undefined, false, undefined, this)
+            ]
+          }, undefined, true, undefined, this),
+          /* @__PURE__ */ jsxDEV("div", {
+            className: "selection-detail",
+            children: [
+              "已学习对局：",
+              profileSummary?.games ?? 0,
+              "，累计落子：",
+              profileSummary?.moves ?? 0
+            ]
+          }, undefined, true, undefined, this),
+          /* @__PURE__ */ jsxDEV("div", {
+            className: "button-row",
+            children: [
+              /* @__PURE__ */ jsxDEV("button", {
+                type: "button",
+                onClick: onClearProfile,
+                children: "清空学习"
+              }, undefined, false, undefined, this),
+              /* @__PURE__ */ jsxDEV("button", {
+                type: "button",
+                onClick: onClearMemory,
+                children: "清空经验库"
+              }, undefined, false, undefined, this),
+              /* @__PURE__ */ jsxDEV("button", {
+                type: "button",
+                onClick: onResetWeights,
+                children: "重置权重"
+              }, undefined, false, undefined, this)
+            ]
+          }, undefined, true, undefined, this)
         ]
       }, undefined, true, undefined, this),
       /* @__PURE__ */ jsxDEV("button", {
@@ -697,6 +788,230 @@ var getPlayerMapping = (mode, humanFirst) => {
   return { human: 1, ai: -1, firstTurn: 1 };
 };
 
+// src/engine/profile.ts
+var STORAGE_KEY = "g4_profile_v1";
+var defaultProfile = () => ({
+  version: 1,
+  games: 0,
+  moves: 0,
+  heat: Array.from({ length: SIZE * SIZE }, () => 0),
+  stats: {
+    centerMoves: 0,
+    edgeMoves: 0,
+    totalMoves: 0,
+    totalZ: 0,
+    sameColumnStreaks: 0,
+    lastColumn: null
+  },
+  updatedAt: Date.now()
+});
+var loadProfile = () => {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) {
+      return defaultProfile();
+    }
+    const parsed = JSON.parse(raw);
+    if (parsed.version !== 1) {
+      return defaultProfile();
+    }
+    return parsed;
+  } catch {
+    return defaultProfile();
+  }
+};
+var saveProfile = (profile) => {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(profile));
+};
+var clearProfile = () => {
+  localStorage.removeItem(STORAGE_KEY);
+};
+var updateProfileMove = (profile, move, player, humanPlayer) => {
+  if (player !== humanPlayer) {
+    return profile;
+  }
+  const columnIndex = move.x + move.y * SIZE;
+  const next = { ...profile };
+  next.moves += 1;
+  next.heat = [...profile.heat];
+  next.heat[columnIndex] = (next.heat[columnIndex] ?? 0) + 1;
+  const dx = Math.abs(move.x - 2);
+  const dy = Math.abs(move.y - 2);
+  const isCenter = dx <= 1 && dy <= 1;
+  const isEdge = move.x === 0 || move.x === 4 || move.y === 0 || move.y === 4;
+  next.stats = { ...profile.stats };
+  next.stats.totalMoves += 1;
+  next.stats.totalZ += move.z;
+  if (isCenter) {
+    next.stats.centerMoves += 1;
+  }
+  if (isEdge) {
+    next.stats.edgeMoves += 1;
+  }
+  if (next.stats.lastColumn === columnIndex) {
+    next.stats.sameColumnStreaks += 1;
+  }
+  next.stats.lastColumn = columnIndex;
+  next.updatedAt = Date.now();
+  return next;
+};
+var updateProfileGame = (profile, played) => {
+  if (!played) {
+    return profile;
+  }
+  const next = { ...profile };
+  next.games += 1;
+  next.updatedAt = Date.now();
+  return next;
+};
+var getProfileSummary = (profile) => {
+  const total = Math.max(profile.stats.totalMoves, 1);
+  const centerBias = profile.stats.centerMoves / total;
+  const edgeBias = profile.stats.edgeMoves / total;
+  const avgZ = profile.stats.totalZ / total;
+  return {
+    centerBias,
+    edgeBias,
+    avgZ,
+    moves: profile.moves,
+    games: profile.games
+  };
+};
+
+// src/engine/memory.ts
+var STORAGE_KEY2 = "g4_memory_v1";
+var defaultMemory = () => ({
+  version: 1,
+  entries: {},
+  order: [],
+  cap: 5000
+});
+var loadMemory = () => {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY2);
+    if (!raw) {
+      return defaultMemory();
+    }
+    const parsed = JSON.parse(raw);
+    if (parsed.version !== 1) {
+      return defaultMemory();
+    }
+    return parsed;
+  } catch {
+    return defaultMemory();
+  }
+};
+var saveMemory = (memory) => {
+  localStorage.setItem(STORAGE_KEY2, JSON.stringify(memory));
+};
+var clearMemory = () => {
+  localStorage.removeItem(STORAGE_KEY2);
+};
+var encodeState = (grid, turn) => {
+  let out = "";
+  for (let i = 0;i < grid.length; i += 1) {
+    const value = grid[i];
+    out += value === 0 ? "0" : value === 1 ? "1" : "2";
+  }
+  return `${out}|${turn}`;
+};
+var scoreMove = (move) => move.wins - move.losses + move.draws * 0.2;
+var pickMemoryMoves = (memory, key) => {
+  const moves = memory.entries[key];
+  if (!moves) {
+    return [];
+  }
+  return [...moves].sort((a, b) => scoreMove(b) - scoreMove(a));
+};
+var updateMemory = (memory, key, move, result) => {
+  const now = Date.now();
+  const next = { ...memory };
+  next.entries = { ...memory.entries };
+  next.order = [...memory.order];
+  if (!next.entries[key]) {
+    next.entries[key] = [];
+    next.order.push(key);
+  }
+  const list = [...next.entries[key]];
+  const existing = list.find((entry) => entry.x === move.x && entry.y === move.y);
+  if (existing) {
+    if (result === "win")
+      existing.wins += 1;
+    if (result === "loss")
+      existing.losses += 1;
+    if (result === "draw")
+      existing.draws += 1;
+    existing.lastSeen = now;
+  } else {
+    list.push({
+      x: move.x,
+      y: move.y,
+      wins: result === "win" ? 1 : 0,
+      losses: result === "loss" ? 1 : 0,
+      draws: result === "draw" ? 1 : 0,
+      lastSeen: now
+    });
+  }
+  next.entries[key] = list;
+  if (next.order.length > next.cap) {
+    const removeKey = next.order.shift();
+    if (removeKey) {
+      delete next.entries[removeKey];
+    }
+  }
+  return next;
+};
+var captureRecentStates = (history, limit) => {
+  return history.slice(Math.max(0, history.length - limit));
+};
+
+// src/engine/weights.ts
+var STORAGE_KEY3 = "g4_weights_v1";
+var defaultWeights = {
+  center: 1,
+  two: 6,
+  three: 40,
+  blockTwo: 8,
+  blockThree: 60,
+  openTwo: 12,
+  openThree: 90,
+  height: 0.4
+};
+var clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+var loadWeights = () => {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY3);
+    if (!raw) {
+      return defaultWeights;
+    }
+    const parsed = JSON.parse(raw);
+    return { ...defaultWeights, ...parsed };
+  } catch {
+    return defaultWeights;
+  }
+};
+var saveWeights = (weights) => {
+  localStorage.setItem(STORAGE_KEY3, JSON.stringify(weights));
+};
+var clearWeights = () => {
+  localStorage.removeItem(STORAGE_KEY3);
+};
+var adjustWeights = (weights, outcome) => {
+  const next = { ...weights };
+  if (outcome === "loss") {
+    next.blockTwo = clamp(next.blockTwo + 0.5, 4, 20);
+    next.blockThree = clamp(next.blockThree + 2, 30, 120);
+    next.openTwo = clamp(next.openTwo + 1, 6, 24);
+    next.openThree = clamp(next.openThree + 2, 40, 140);
+  }
+  if (outcome === "win") {
+    next.two = clamp(next.two + 0.2, 2, 12);
+    next.three = clamp(next.three + 1, 20, 80);
+  }
+  return next;
+};
+var getDefaultWeights = () => ({ ...defaultWeights });
+
 // src/App.tsx
 import { jsxDEV as jsxDEV4 } from "react/jsx-dev-runtime";
 var playerLabel = (player) => player === 1 ? "红方" : "蓝方";
@@ -710,6 +1025,12 @@ var App = () => {
   const [humanFirst, setHumanFirst] = useState(true);
   const [humanPlayer, setHumanPlayer] = useState(1);
   const [aiPlayer, setAiPlayer] = useState(-1);
+  const [learningEnabled, setLearningEnabled] = useState(true);
+  const [profile, setProfile] = useState(loadProfile());
+  const [weights, setWeights] = useState(loadWeights());
+  const [memory, setMemory] = useState(loadMemory());
+  const [randomIntensity, setRandomIntensity] = useState(0.6);
+  const [randomSeed, setRandomSeed] = useState(1);
   const [timeControl, setTimeControl] = useState("off");
   const [timeLeftMs, setTimeLeftMs] = useState(null);
   const [gameStatus, setGameStatus] = useState("playing");
@@ -730,6 +1051,7 @@ var App = () => {
   const humanPlayerRef = useRef2(1);
   const aiPlayerRef = useRef2(-1);
   const aiRequestTurnRef = useRef2(null);
+  const historyRef = useRef2([]);
   useEffect2(() => {
     workerRef.current = new Worker(new URL("./aiWorker.js", import.meta.url), { type: "module" });
     workerRef.current.onmessage = (event) => {
@@ -764,6 +1086,15 @@ var App = () => {
     };
     return () => workerRef.current?.terminate();
   }, []);
+  useEffect2(() => {
+    saveProfile(profile);
+  }, [profile]);
+  useEffect2(() => {
+    saveMemory(memory);
+  }, [memory]);
+  useEffect2(() => {
+    saveWeights(weights);
+  }, [weights]);
   useEffect2(() => {
     resetGame();
   }, [mode, humanFirst]);
@@ -828,6 +1159,23 @@ var App = () => {
       }
     }
   }, [gameStatus]);
+  useEffect2(() => {
+    if (gameStatus === "won" || gameStatus === "draw") {
+      if (!learningEnabled) {
+        return;
+      }
+      const outcome = gameStatus === "draw" ? "draw" : winner === aiPlayer ? "win" : "loss";
+      const recent = captureRecentStates(historyRef.current, 10);
+      let nextMemory = memory;
+      recent.forEach((state) => {
+        const key = encodeState(state.grid, state.turn);
+        nextMemory = updateMemory(nextMemory, key, state.move, outcome);
+      });
+      setMemory(nextMemory);
+      setWeights(adjustWeights(weights, outcome));
+      setProfile((prev) => updateProfileGame(prev, true));
+    }
+  }, [gameStatus, learningEnabled, winner, aiPlayer, memory, weights]);
   const resetGame = () => {
     engineRef.current = new Engine;
     setVersion((v) => v + 1);
@@ -851,6 +1199,7 @@ var App = () => {
     setTimeLeftMs(null);
     turnDeadlineRef.current = null;
     moveInProgressRef.current = false;
+    historyRef.current = [];
     if (aiTimeoutRef.current) {
       window.clearTimeout(aiTimeoutRef.current);
       aiTimeoutRef.current = null;
@@ -894,13 +1243,24 @@ var App = () => {
         }
       }
     }, timeLimitMs + 100);
+    const memoryKey = encodeState(engineRef.current.grid, currentTurn);
+    const memoryMoves = pickMemoryMoves(memory, memoryKey).map((entry) => ({
+      x: entry.x,
+      y: entry.y,
+      score: entry.wins - entry.losses + entry.draws * 0.2
+    }));
     workerRef.current.postMessage({
       grid: Array.from(engineRef.current.grid),
       heights: Array.from(engineRef.current.heights),
       moves: engineRef.current.moves,
       player: aiPlayerRef.current,
       difficulty,
-      timeLimitMs
+      timeLimitMs,
+      weights,
+      profile,
+      memoryMoves,
+      randomSeed,
+      randomIntensity
     });
   };
   const applyMove = (x, y, player, fromAi = false) => {
@@ -929,6 +1289,13 @@ var App = () => {
       setTimeout(() => setToast(null), 1200);
       moveInProgressRef.current = false;
       return;
+    }
+    historyRef.current = [
+      ...historyRef.current,
+      { grid: new Int8Array(engineRef.current.grid), move: { x, y }, turn: currentTurn }
+    ];
+    if (learningEnabled) {
+      setProfile((prev) => updateProfileMove(prev, { x, y, z: result.z }, player, humanPlayer));
     }
     setLastMove({ x, y, z: result.z, player });
     setVersion((v) => v + 1);
@@ -1006,6 +1373,10 @@ var App = () => {
                 difficulty,
                 humanFirst,
                 timeControl,
+                learningEnabled,
+                profileSummary: getProfileSummary(profile),
+                randomIntensity,
+                randomSeed,
                 selectedMove,
                 selectedHeight,
                 hoveredMove: hovered,
@@ -1024,6 +1395,21 @@ var App = () => {
                   setTimeControl(value);
                   resetGame();
                 },
+                onLearningToggle: (value) => setLearningEnabled(value),
+                onClearProfile: () => {
+                  clearProfile();
+                  setProfile(loadProfile());
+                },
+                onClearMemory: () => {
+                  clearMemory();
+                  setMemory(loadMemory());
+                },
+                onResetWeights: () => {
+                  clearWeights();
+                  setWeights(getDefaultWeights());
+                },
+                onRandomIntensityChange: setRandomIntensity,
+                onRandomSeedChange: setRandomSeed,
                 onReset: resetGame,
                 onConfirmMove: () => {
                   if (selectedMove) {
