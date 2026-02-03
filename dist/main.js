@@ -1239,7 +1239,7 @@ var App = () => {
     });
   };
   const applyMove = (x, y, player, fromAi = false) => {
-    if (gameStatus !== "playing" || aiThinking || isAnimating) {
+    if (gameStatus !== "playing" || isAnimating || !fromAi && aiThinking) {
       return;
     }
     if (moveInProgressRef.current) {
@@ -1258,6 +1258,10 @@ var App = () => {
       return;
     }
     moveInProgressRef.current = true;
+    if (fromAi) {
+      aiRequestRef.current = false;
+      aiRequestTurnRef.current = null;
+    }
     const result = engineRef.current.makeMove(x, y, player);
     if (!result.ok) {
       setToast(result.message ?? "该位置已满，请重新选择");
