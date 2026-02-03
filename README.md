@@ -56,8 +56,3 @@ AI 采用 Minimax + AlphaBeta + 迭代加深，并加入“人类感”策略：
 ### 阵营颜色错乱修复说明
 - **原因**：人机模式下没有明确的 `humanPlayer/aiPlayer/currentTurn` 单一真相源，导致 AI 使用了当前回合颜色或被覆盖的玩家颜色。
 - **修复**：引入固定的阵营映射（`humanPlayer` 与 `aiPlayer`）并在每次开局统一初始化，所有落子必须满足 `player === currentTurn` 且 AI 落子必须使用 `aiPlayer`，并在开发时输出断言错误提示。
-
-## 测试（可选）
-```bash
-npm run test
-```

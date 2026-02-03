@@ -38,6 +38,7 @@ const App = () => {
   const aiTimeoutRef = useRef<number | null>(null);
   const humanPlayerRef = useRef<Player>(1);
   const aiPlayerRef = useRef<Player>(-1);
+  const aiRequestTurnRef = useRef<Player | null>(null);
 
   useEffect(() => {
     workerRef.current = new Worker(new URL('./aiWorker.js', import.meta.url), { type: 'module' });
@@ -52,6 +53,10 @@ const App = () => {
       if (winnerRef.current || gameStatusRef.current !== 'playing') {
         return;
       }
+      if (aiRequestTurnRef.current !== currentTurn || currentTurn !== aiPlayerRef.current) {
+        aiRequestTurnRef.current = null;
+        return;
+      }
       const nextMove = move ?? pickFallbackMove();
       if (!nextMove) {
         return;
@@ -63,7 +68,12 @@ const App = () => {
       setAiThinking(false);
       aiRequestRef.current = false;
       const fallback = pickFallbackMove();
-      if (fallback && gameStatusRef.current === 'playing') {
+      if (
+        fallback &&
+        gameStatusRef.current === 'playing' &&
+        aiRequestTurnRef.current === currentTurn &&
+        currentTurn === aiPlayerRef.current
+      ) {
         applyMove(fallback.x, fallback.y, aiPlayerRef.current, true);
       }
     };
@@ -141,6 +151,7 @@ const App = () => {
     if (gameStatus !== 'playing') {
       setAiThinking(false);
       aiRequestRef.current = false;
+      aiRequestTurnRef.current = null;
       if (aiTimeoutRef.current) {
         window.clearTimeout(aiTimeoutRef.current);
         aiTimeoutRef.current = null;
@@ -176,6 +187,7 @@ const App = () => {
       window.clearTimeout(aiTimeoutRef.current);
       aiTimeoutRef.current = null;
     }
+    aiRequestTurnRef.current = null;
   };
 
   const pickFallbackMove = () => {
@@ -192,7 +204,13 @@ const App = () => {
     if (!workerRef.current) {
       return;
     }
-    if (aiThinking || aiRequestRef.current || gameStatus !== 'playing' || isAnimating) {
+    if (
+      aiThinking ||
+      aiRequestRef.current ||
+      gameStatus !== 'playing' ||
+      isAnimating ||
+      currentTurn !== aiPlayerRef.current
+    ) {
       return;
     }
     const difficultyLimits = { easy: 200, medium: 1500, hard: 6000 } as const;
@@ -200,12 +218,18 @@ const App = () => {
     const remaining = timeLeftMs ?? null;
     const timeLimitMs = remaining ? Math.max(200, Math.min(baseLimit, remaining - 50)) : baseLimit;
     aiRequestRef.current = true;
+    aiRequestTurnRef.current = currentTurn;
     setAiThinking(true);
     if (aiTimeoutRef.current) {
       window.clearTimeout(aiTimeoutRef.current);
     }
     aiTimeoutRef.current = window.setTimeout(() => {
-      if (aiRequestRef.current && gameStatusRef.current === 'playing') {
+      if (
+        aiRequestRef.current &&
+        gameStatusRef.current === 'playing' &&
+        aiRequestTurnRef.current === currentTurn &&
+        currentTurn === aiPlayerRef.current
+      ) {
         console.warn('AI timeout reached, using fallback move.');
         aiRequestRef.current = false;
         setAiThinking(false);
