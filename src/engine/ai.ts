@@ -9,6 +9,11 @@ export interface AiResult {
   depth: number;
 }
 
+export interface AiOptions {
+  timeLimitMs?: number;
+  hardLimitMs?: number;
+}
+
 const CENTER_ORDER = Array.from({ length: SIZE }, (_, v) => v).sort(
   (a, b) => Math.abs(a - 2) - Math.abs(b - 2)
 );
@@ -107,13 +112,21 @@ const negamax = (
   return best;
 };
 
-export const computeBestMove = (engine: Engine, player: Player, difficulty: Difficulty): AiResult => {
+export const computeBestMove = (
+  engine: Engine,
+  player: Player,
+  difficulty: Difficulty,
+  options: AiOptions = {}
+): AiResult => {
   const config =
     difficulty === 'easy'
       ? { maxDepth: 1, timeLimit: 80 }
       : difficulty === 'medium'
       ? { maxDepth: 4, timeLimit: 500 }
       : { maxDepth: 6, timeLimit: 1200 };
+
+  const hardLimit = options.hardLimitMs ?? 25000;
+  const timeLimit = Math.min(options.timeLimitMs ?? config.timeLimit, hardLimit);
 
   const immediate = findImmediateWin(engine, player);
   if (immediate) {
@@ -124,7 +137,7 @@ export const computeBestMove = (engine: Engine, player: Player, difficulty: Diff
     return { move: block, depth: 1 };
   }
 
-  const deadline = performance.now() + config.timeLimit;
+  const deadline = performance.now() + timeLimit;
   let bestMove: { x: number; y: number } | null = null;
   let bestScore = -Infinity;
   let lastCompletedDepth = 0;

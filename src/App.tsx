@@ -16,6 +16,8 @@ const App = () => {
   const [mode, setMode] = useState<'pvp' | 'ai'>('pvp');
   const [difficulty, setDifficulty] = useState<Difficulty>('medium');
   const [humanFirst, setHumanFirst] = useState(true);
+  const [timeControl, setTimeControl] = useState<'off' | '30' | '60'>('off');
+  const [timeLeftMs, setTimeLeftMs] = useState<number | null>(null);
   const [gameStatus, setGameStatus] = useState<'playing' | 'won' | 'draw'>('playing');
   const [winner, setWinner] = useState<Player | null>(null);
   const [winLines, setWinLines] = useState<number[][]>([]);
@@ -29,6 +31,7 @@ const App = () => {
   const gameStatusRef = useRef<'playing' | 'won' | 'draw'>('playing');
   const moveInProgressRef = useRef(false);
   const aiRequestRef = useRef(false);
+  const turnDeadlineRef = useRef<number | null>(null);
 
   useEffect(() => {
     workerRef.current = new Worker(new URL('./aiWorker.ts', import.meta.url), { type: 'module' });
@@ -53,11 +56,59 @@ const App = () => {
   }, [mode, currentPlayer, humanFirst, difficulty, gameStatus]);
 
   useEffect(() => {
+    if (gameStatus !== 'playing') {
+      turnDeadlineRef.current = null;
+      setTimeLeftMs(null);
+      return;
+    }
+    if (timeControl === 'off') {
+      turnDeadlineRef.current = null;
+      setTimeLeftMs(null);
+      return;
+    }
+    const baseMs = timeControl === '30' ? 30000 : 60000;
+    const deadline = performance.now() + baseMs;
+    turnDeadlineRef.current = deadline;
+    setTimeLeftMs(baseMs);
+  }, [currentPlayer, gameStatus, timeControl]);
+
+  useEffect(() => {
+    if (gameStatus !== 'playing' || timeControl === 'off') {
+      return;
+    }
+    const interval = window.setInterval(() => {
+      if (!turnDeadlineRef.current) {
+        return;
+      }
+      const remaining = Math.max(0, Math.ceil(turnDeadlineRef.current - performance.now()));
+      setTimeLeftMs(remaining);
+      if (remaining <= 0) {
+        const loser = currentPlayer;
+        const winnerPlayer: Player = loser === 1 ? -1 : 1;
+        setWinner(winnerPlayer);
+        setGameStatus('won');
+        setSelectedMove(null);
+        setAiThinking(false);
+        aiRequestRef.current = false;
+        moveInProgressRef.current = false;
+      }
+    }, 200);
+    return () => window.clearInterval(interval);
+  }, [currentPlayer, gameStatus, timeControl]);
+
+  useEffect(() => {
     winnerRef.current = winner;
   }, [winner]);
 
   useEffect(() => {
     gameStatusRef.current = gameStatus;
+  }, [gameStatus]);
+
+  useEffect(() => {
+    if (gameStatus !== 'playing') {
+      setAiThinking(false);
+      aiRequestRef.current = false;
+    }
   }, [gameStatus]);
 
 
@@ -73,6 +124,8 @@ const App = () => {
     setAiThinking(false);
     setSelectedMove(null);
     setIsAnimating(false);
+    setTimeLeftMs(null);
+    turnDeadlineRef.current = null;
     moveInProgressRef.current = false;
   };
 
@@ -83,6 +136,10 @@ const App = () => {
     if (aiThinking || aiRequestRef.current || gameStatus !== 'playing' || isAnimating) {
       return;
     }
+    const difficultyLimits = { easy: 200, medium: 1500, hard: 6000 } as const;
+    const baseLimit = difficultyLimits[difficulty];
+    const remaining = timeLeftMs ?? null;
+    const timeLimitMs = remaining ? Math.max(200, Math.min(baseLimit, remaining - 50)) : baseLimit;
     aiRequestRef.current = true;
     setAiThinking(true);
     workerRef.current.postMessage({
@@ -90,7 +147,8 @@ const App = () => {
       heights: Array.from(engineRef.current.heights),
       moves: engineRef.current.moves,
       player: currentPlayer,
-      difficulty
+      difficulty,
+      timeLimitMs
     });
   };
 
@@ -151,9 +209,13 @@ const App = () => {
     ? '平局：棋盘已满'
     : `当前回合：${playerLabel(currentPlayer)}`;
 
+  const timeLeftDisplay =
+    timeLeftMs === null ? '未开启' : `${Math.ceil(timeLeftMs / 1000)}s`;
+
   const selectedHeight = selectedMove
     ? engineRef.current.heights[selectedMove.x + selectedMove.y * SIZE]
     : null;
+  const hoveredHeight = hovered ? engineRef.current.heights[hovered.x + hovered.y * SIZE] : null;
   const isSelectedFull = selectedHeight !== null && selectedHeight >= SIZE;
   const canConfirmMove =
     gameStatus === 'playing' &&
@@ -170,6 +232,8 @@ const App = () => {
         difficulty={difficulty}
         status={statusText}
         aiThinking={aiThinking}
+        timeControl={timeControl}
+        timeLeft={timeLeftDisplay}
       />
       <div className="layout">
         <div className="board-panel">
@@ -192,8 +256,11 @@ const App = () => {
             mode={mode}
             difficulty={difficulty}
             humanFirst={humanFirst}
+            timeControl={timeControl}
             selectedMove={selectedMove}
             selectedHeight={selectedHeight}
+            hoveredMove={hovered}
+            hoveredHeight={hoveredHeight}
             isSelectedFull={isSelectedFull}
             canConfirm={canConfirmMove}
             isAnimating={isAnimating}
@@ -204,6 +271,10 @@ const App = () => {
             onDifficultyChange={setDifficulty}
             onHumanFirstChange={(value) => {
               setHumanFirst(value);
+              resetGame();
+            }}
+            onTimeControlChange={(value) => {
+              setTimeControl(value);
               resetGame();
             }}
             onReset={resetGame}

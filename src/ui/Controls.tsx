@@ -4,14 +4,18 @@ interface ControlsProps {
   mode: 'pvp' | 'ai';
   difficulty: Difficulty;
   humanFirst: boolean;
+  timeControl: 'off' | '30' | '60';
   selectedMove: { x: number; y: number } | null;
   selectedHeight: number | null;
+  hoveredMove: { x: number; y: number } | null;
+  hoveredHeight: number | null;
   isSelectedFull: boolean;
   canConfirm: boolean;
   isAnimating: boolean;
   onModeChange: (mode: 'pvp' | 'ai') => void;
   onDifficultyChange: (difficulty: Difficulty) => void;
   onHumanFirstChange: (humanFirst: boolean) => void;
+  onTimeControlChange: (value: 'off' | '30' | '60') => void;
   onReset: () => void;
   onConfirmMove: () => void;
 }
@@ -20,14 +24,18 @@ const Controls = ({
   mode,
   difficulty,
   humanFirst,
+  timeControl,
   selectedMove,
   selectedHeight,
+  hoveredMove,
+  hoveredHeight,
   isSelectedFull,
   canConfirm,
   isAnimating,
   onModeChange,
   onDifficultyChange,
   onHumanFirstChange,
+  onTimeControlChange,
   onReset,
   onConfirmMove
 }: ControlsProps) => {
@@ -38,6 +46,10 @@ const Controls = ({
         ? '该柱已满'
         : `预计落点高度 z = ${selectedHeight}`
       : '请选择柱子';
+  const hoverText =
+    hoveredMove && hoveredHeight !== null
+      ? `悬停柱子：(${hoveredMove.x}, ${hoveredMove.y})，预计落点 z = ${hoveredHeight >= 5 ? '满' : hoveredHeight}`
+      : '悬停提示：移动到柱子查看落点';
 
   return (
     <section className="controls">
@@ -45,6 +57,7 @@ const Controls = ({
       <div className="selection-info">
         <p className="selection-title">{selectedText}</p>
         <p className={isSelectedFull ? 'selection-warning' : 'selection-detail'}>{heightText}</p>
+        <p className="selection-detail">{hoverText}</p>
         <button type="button" className="confirm" onClick={onConfirmMove} disabled={!canConfirm}>
           {isAnimating ? '落子动画中...' : '落子'}
         </button>
@@ -90,6 +103,25 @@ const Controls = ({
           </div>
         </>
       )}
+      <div className="control-group">
+        <label>计时模式</label>
+        <div className="button-row">
+          {[
+            { value: 'off', label: 'OFF' },
+            { value: '30', label: '30s/步' },
+            { value: '60', label: '60s/步' }
+          ].map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              className={timeControl === option.value ? 'active' : ''}
+              onClick={() => onTimeControlChange(option.value as 'off' | '30' | '60')}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+      </div>
       <button type="button" className="reset" onClick={onReset}>
         重新开始
       </button>
