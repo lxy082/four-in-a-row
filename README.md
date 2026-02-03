@@ -18,6 +18,12 @@ npm install
 npm run dev
 ```
 
+## 最快运行（无需 npm）
+1. 运行脚本：`run_server.sh`（Mac/Linux）或 `run_server.bat`（Windows），或执行 `python server.py`。
+2. 浏览器打开 <http://localhost:8000>。
+
+> `dist/` 是已构建的静态产物，使用 CDN import map 加载依赖，因此需要联网访问。
+
 ## 构建与本地静态启动
 ```bash
 npm run build
@@ -52,6 +58,8 @@ AI 采用 Minimax + AlphaBeta + 迭代加深，并加入“人类感”策略：
 ### AI 超时与卡顿修复说明
 - **原因**：此前 AI 搜索没有严格的“硬上限”，可能在深度递归中耗时过长，导致 UI 看起来卡住。
 - **修复**：主线程在每回合为 AI 计算设置时间预算（与计时模式联动），AI 搜索在 worker 内部按 `deadline` 逐层迭代并在超过时间上限时立即返回当前最佳着法；即使在计时 OFF 模式下，也有 25s 的硬上限。
+- **AI 不再走的根因**：此前 AI 触发依赖仅在回合切换时运行，但落子动画期间 `isAnimating` 为 true，导致 AI 请求被短路且不会在动画结束后重新触发。
+- **修复**：改为在 `gameStatus/turn/isAnimating/aiThinking` 条件满足时立即触发 AI，并加入超时 fallback（中心优先合法步），确保每回合都会落子。
 
 ## 测试
 ```bash

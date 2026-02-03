@@ -128,6 +128,10 @@ export const computeBestMove = (
   const hardLimit = options.hardLimitMs ?? 25000;
   const timeLimit = Math.min(options.timeLimitMs ?? config.timeLimit, hardLimit);
 
+  if (engine.moves === 0) {
+    return { move: { x: 2, y: 2 }, depth: 1 };
+  }
+
   const immediate = findImmediateWin(engine, player);
   if (immediate) {
     return { move: immediate, depth: 1 };
@@ -179,6 +183,11 @@ export const computeBestMove = (
     if (randomMove) {
       return { move: randomMove, depth: 1 };
     }
+  }
+
+  if (!bestMove) {
+    const moves = orderedMoves(engine);
+    bestMove = moves[0] ?? null;
   }
 
   return { move: bestMove, depth: lastCompletedDepth };

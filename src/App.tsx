@@ -32,28 +32,53 @@ const App = () => {
   const moveInProgressRef = useRef(false);
   const aiRequestRef = useRef(false);
   const turnDeadlineRef = useRef<number | null>(null);
+  const aiTimeoutRef = useRef<number | null>(null);
 
   useEffect(() => {
-    workerRef.current = new Worker(new URL('./aiWorker.ts', import.meta.url), { type: 'module' });
+    workerRef.current = new Worker(new URL('./aiWorker.js', import.meta.url), { type: 'module' });
     workerRef.current.onmessage = (event) => {
       const move = event.data?.move as { x: number; y: number } | null;
       setAiThinking(false);
       aiRequestRef.current = false;
-      if (!move || winnerRef.current || gameStatusRef.current !== 'playing') {
+      if (aiTimeoutRef.current) {
+        window.clearTimeout(aiTimeoutRef.current);
+        aiTimeoutRef.current = null;
+      }
+      if (winnerRef.current || gameStatusRef.current !== 'playing') {
         return;
       }
-      applyMove(move.x, move.y, true);
+      const nextMove = move ?? pickFallbackMove();
+      if (!nextMove) {
+        return;
+      }
+      applyMove(nextMove.x, nextMove.y, true);
+    };
+    workerRef.current.onerror = (error) => {
+      console.error('AI worker failed:', error);
+      setAiThinking(false);
+      aiRequestRef.current = false;
+      const fallback = pickFallbackMove();
+      if (fallback && gameStatusRef.current === 'playing') {
+        applyMove(fallback.x, fallback.y, true);
+      }
     };
     return () => workerRef.current?.terminate();
   }, []);
 
+  const aiPlayer: Player = humanFirst ? -1 : 1;
+
   useEffect(() => {
-    if (mode === 'ai') {
-      if (currentPlayer === (humanFirst ? -1 : 1) && gameStatus === 'playing') {
-        requestAiMove();
-      }
+    if (
+      mode === 'ai' &&
+      gameStatus === 'playing' &&
+      currentPlayer === aiPlayer &&
+      !aiThinking &&
+      !isAnimating &&
+      !moveInProgressRef.current
+    ) {
+      requestAiMove();
     }
-  }, [mode, currentPlayer, humanFirst, difficulty, gameStatus]);
+  }, [mode, gameStatus, currentPlayer, aiPlayer, aiThinking, isAnimating, timeLeftMs]);
 
   useEffect(() => {
     if (gameStatus !== 'playing') {
@@ -108,6 +133,10 @@ const App = () => {
     if (gameStatus !== 'playing') {
       setAiThinking(false);
       aiRequestRef.current = false;
+      if (aiTimeoutRef.current) {
+        window.clearTimeout(aiTimeoutRef.current);
+        aiTimeoutRef.current = null;
+      }
     }
   }, [gameStatus]);
 
@@ -127,6 +156,20 @@ const App = () => {
     setTimeLeftMs(null);
     turnDeadlineRef.current = null;
     moveInProgressRef.current = false;
+    if (aiTimeoutRef.current) {
+      window.clearTimeout(aiTimeoutRef.current);
+      aiTimeoutRef.current = null;
+    }
+  };
+
+  const pickFallbackMove = () => {
+    const moves = engineRef.current.getValidMoves();
+    moves.sort((a, b) => {
+      const da = Math.abs(a.x - 2) + Math.abs(a.y - 2);
+      const db = Math.abs(b.x - 2) + Math.abs(b.y - 2);
+      return da - db;
+    });
+    return moves[0] ?? null;
   };
 
   const requestAiMove = () => {
@@ -142,6 +185,20 @@ const App = () => {
     const timeLimitMs = remaining ? Math.max(200, Math.min(baseLimit, remaining - 50)) : baseLimit;
     aiRequestRef.current = true;
     setAiThinking(true);
+    if (aiTimeoutRef.current) {
+      window.clearTimeout(aiTimeoutRef.current);
+    }
+    aiTimeoutRef.current = window.setTimeout(() => {
+      if (aiRequestRef.current && gameStatusRef.current === 'playing') {
+        console.warn('AI timeout reached, using fallback move.');
+        aiRequestRef.current = false;
+        setAiThinking(false);
+        const fallback = pickFallbackMove();
+        if (fallback) {
+          applyMove(fallback.x, fallback.y, true);
+        }
+      }
+    }, timeLimitMs + 100);
     workerRef.current.postMessage({
       grid: Array.from(engineRef.current.grid),
       heights: Array.from(engineRef.current.heights),

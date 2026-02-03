@@ -6,7 +6,12 @@ import { SIZE, coordsFromIndex } from '../engine/lines';
 import type { Player } from '../engine/board';
 
 const spacing = 1.2;
-const columnHeight = spacing * 4;
+const boardThickness = 0.4;
+const boardTop = -2.8;
+const boardY = boardTop - boardThickness / 2;
+const columnHeight = spacing * 4 + 0.6;
+const columnInset = 0.08;
+const columnCenterY = boardTop + columnHeight / 2 - columnInset;
 const selectThreshold = 6;
 
 const toWorld = (x: number, y: number, z: number) => {
@@ -195,8 +200,8 @@ const BoardScene = ({
       <directionalLight position={[6, 10, 6]} intensity={1.2} castShadow />
       <OrbitControls enablePan={false} />
       <group>
-        <mesh position={[0, -3.2, 0]} receiveShadow>
-          <boxGeometry args={[7, 0.3, 7]} />
+        <mesh position={[0, boardY, 0]} receiveShadow>
+          <boxGeometry args={[7, boardThickness, 7]} />
           <meshStandardMaterial color="#f8fafc" />
         </mesh>
         <lineSegments>
@@ -210,7 +215,7 @@ const BoardScene = ({
           const index = column.x + column.y * SIZE;
           return (
             <group key={`column-${column.x}-${column.y}-${version}`} position={[pos.x, 0, pos.z]}>
-              <mesh position={[0, pos.y, 0]}>
+              <mesh position={[0, columnCenterY, 0]}>
                 <cylinderGeometry args={[0.05, 0.05, columnHeight, 12]} />
                 <meshStandardMaterial
                   color={isSelected ? '#f59e0b' : isHovered ? '#38bdf8' : '#94a3b8'}
@@ -225,7 +230,7 @@ const BoardScene = ({
                     mesh.userData = { x: column.x, y: column.y };
                   }
                 }}
-                position={[0, pos.y, 0]}
+                position={[0, columnCenterY, 0]}
               >
                 <cylinderGeometry args={[0.35, 0.35, columnHeight, 12]} />
                 <meshStandardMaterial transparent opacity={0} />
