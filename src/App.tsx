@@ -4,6 +4,7 @@ import type { Difficulty } from './engine/ai';
 import Controls from './ui/Controls';
 import StatusBar from './ui/StatusBar';
 import ThreeBoard from './ui/ThreeBoard';
+import { SIZE } from './engine/lines';
 
 const playerLabel = (player: Player) => (player === 1 ? '红方' : '蓝方');
 
@@ -15,44 +16,49 @@ const App = () => {
   const [mode, setMode] = useState<'pvp' | 'ai'>('pvp');
   const [difficulty, setDifficulty] = useState<Difficulty>('medium');
   const [humanFirst, setHumanFirst] = useState(true);
+  const [gameStatus, setGameStatus] = useState<'playing' | 'won' | 'draw'>('playing');
   const [winner, setWinner] = useState<Player | null>(null);
-  const [draw, setDraw] = useState(false);
   const [winLines, setWinLines] = useState<number[][]>([]);
   const [hovered, setHovered] = useState<{ x: number; y: number } | null>(null);
   const [lastMove, setLastMove] = useState<{ x: number; y: number; z: number; player: Player } | null>(null);
   const [aiThinking, setAiThinking] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  const [selectedMove, setSelectedMove] = useState<{ x: number; y: number } | null>(null);
+  const [isAnimating, setIsAnimating] = useState(false);
   const winnerRef = useRef<Player | null>(null);
-  const drawRef = useRef(false);
+  const gameStatusRef = useRef<'playing' | 'won' | 'draw'>('playing');
+  const moveInProgressRef = useRef(false);
+  const aiRequestRef = useRef(false);
 
   useEffect(() => {
     workerRef.current = new Worker(new URL('./aiWorker.ts', import.meta.url), { type: 'module' });
     workerRef.current.onmessage = (event) => {
       const move = event.data?.move as { x: number; y: number } | null;
       setAiThinking(false);
-      if (!move || winnerRef.current || drawRef.current) {
+      aiRequestRef.current = false;
+      if (!move || winnerRef.current || gameStatusRef.current !== 'playing') {
         return;
       }
-      handleMove(move.x, move.y, true);
+      applyMove(move.x, move.y, true);
     };
     return () => workerRef.current?.terminate();
   }, []);
 
   useEffect(() => {
     if (mode === 'ai') {
-      if (currentPlayer === (humanFirst ? -1 : 1) && !winner && !draw) {
+      if (currentPlayer === (humanFirst ? -1 : 1) && gameStatus === 'playing') {
         requestAiMove();
       }
     }
-  }, [mode, currentPlayer, humanFirst, difficulty, winner, draw]);
+  }, [mode, currentPlayer, humanFirst, difficulty, gameStatus]);
 
   useEffect(() => {
     winnerRef.current = winner;
   }, [winner]);
 
   useEffect(() => {
-    drawRef.current = draw;
-  }, [draw]);
+    gameStatusRef.current = gameStatus;
+  }, [gameStatus]);
 
 
   const resetGame = () => {
@@ -60,17 +66,24 @@ const App = () => {
     setVersion((v) => v + 1);
     setCurrentPlayer(1);
     setWinner(null);
-    setDraw(false);
+    setGameStatus('playing');
     setWinLines([]);
     setLastMove(null);
     setHovered(null);
     setAiThinking(false);
+    setSelectedMove(null);
+    setIsAnimating(false);
+    moveInProgressRef.current = false;
   };
 
   const requestAiMove = () => {
     if (!workerRef.current) {
       return;
     }
+    if (aiThinking || aiRequestRef.current || gameStatus !== 'playing' || isAnimating) {
+      return;
+    }
+    aiRequestRef.current = true;
     setAiThinking(true);
     workerRef.current.postMessage({
       grid: Array.from(engineRef.current.grid),
@@ -81,8 +94,11 @@ const App = () => {
     });
   };
 
-  const handleMove = (x: number, y: number, fromAi = false) => {
-    if (winner || draw || aiThinking) {
+  const applyMove = (x: number, y: number, fromAi = false) => {
+    if (gameStatus !== 'playing' || aiThinking || isAnimating) {
+      return;
+    }
+    if (moveInProgressRef.current) {
       return;
     }
     if (mode === 'ai' && !fromAi) {
@@ -91,21 +107,30 @@ const App = () => {
         return;
       }
     }
+    moveInProgressRef.current = true;
     const result = engineRef.current.makeMove(x, y, currentPlayer);
     if (!result.ok) {
       setToast(result.message ?? '该位置已满，请重新选择');
       setTimeout(() => setToast(null), 1200);
+      moveInProgressRef.current = false;
       return;
     }
     setLastMove({ x, y, z: result.z!, player: currentPlayer });
     setVersion((v) => v + 1);
+    setSelectedMove(null);
+    setIsAnimating(true);
+    window.setTimeout(() => {
+      setIsAnimating(false);
+      moveInProgressRef.current = false;
+    }, 500);
     if (result.win) {
       setWinner(currentPlayer);
       setWinLines(result.winLines ?? []);
+      setGameStatus('won');
       return;
     }
     if (result.draw) {
-      setDraw(true);
+      setGameStatus('draw');
       return;
     }
     setCurrentPlayer((prev) => (prev === 1 ? -1 : 1));
@@ -122,9 +147,21 @@ const App = () => {
 
   const statusText = winner
     ? `胜者：${playerLabel(winner)}`
-    : draw
+    : gameStatus === 'draw'
     ? '平局：棋盘已满'
     : `当前回合：${playerLabel(currentPlayer)}`;
+
+  const selectedHeight = selectedMove
+    ? engineRef.current.heights[selectedMove.x + selectedMove.y * SIZE]
+    : null;
+  const isSelectedFull = selectedHeight !== null && selectedHeight >= SIZE;
+  const canConfirmMove =
+    gameStatus === 'playing' &&
+    !isAnimating &&
+    !aiThinking &&
+    Boolean(selectedMove) &&
+    !isSelectedFull &&
+    (mode === 'pvp' || currentPlayer === (humanFirst ? 1 : -1));
 
   return (
     <div className="app">
@@ -141,10 +178,11 @@ const App = () => {
             heights={heights}
             hovered={hovered}
             onHover={setHovered}
-            onColumnClick={handleMove}
+            selected={selectedMove}
+            onSelect={setSelectedMove}
             lastMove={lastMove}
             winIndices={winIndices}
-            locked={Boolean(winner || draw || aiThinking)}
+            locked={gameStatus !== 'playing' || aiThinking || isAnimating}
             version={version}
           />
           {toast && <div className="toast">{toast}</div>}
@@ -154,6 +192,11 @@ const App = () => {
             mode={mode}
             difficulty={difficulty}
             humanFirst={humanFirst}
+            selectedMove={selectedMove}
+            selectedHeight={selectedHeight}
+            isSelectedFull={isSelectedFull}
+            canConfirm={canConfirmMove}
+            isAnimating={isAnimating}
             onModeChange={(next) => {
               setMode(next);
               resetGame();
@@ -164,12 +207,18 @@ const App = () => {
               resetGame();
             }}
             onReset={resetGame}
+            onConfirmMove={() => {
+              if (selectedMove) {
+                applyMove(selectedMove.x, selectedMove.y);
+              }
+            }}
           />
           <section className="rules">
             <h2>规则说明</h2>
             <ul>
               <li>棋盘为 5×5×5 的三维立方体，坐标 (x,y,z)，z=0 为最底层。</li>
               <li>重力方向固定向 -z，玩家只选择柱子 (x,y)，棋子自动落到最低空位。</li>
+              <li>先点击柱子进行选择，再点击“落子”按钮确认，才会真正下棋。</li>
               <li>若该柱子 5 个高度已满，该步非法且需要重新选择。</li>
               <li>任意方向连续 4 子即胜（轴向、平面斜线、三维斜线均有效）。</li>
               <li>棋盘 125 格填满且无人胜出则平局。</li>

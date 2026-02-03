@@ -45,7 +45,7 @@ const Piece = ({
     }
   });
 
-  const color = player === 1 ? '#e94b4b' : '#4b7be9';
+  const color = player === 1 ? '#ef4444' : '#2563eb';
   const emissive = highlight ? new THREE.Color('#f5e663') : new THREE.Color('#000000');
 
   return (
@@ -61,7 +61,8 @@ interface ThreeBoardProps {
   heights: Int8Array;
   hovered: { x: number; y: number } | null;
   onHover: (value: { x: number; y: number } | null) => void;
-  onColumnClick: (x: number, y: number) => void;
+  selected: { x: number; y: number } | null;
+  onSelect: (value: { x: number; y: number } | null) => void;
   lastMove: { x: number; y: number; z: number; player: Player } | null;
   winIndices: Set<number>;
   locked: boolean;
@@ -73,7 +74,8 @@ const ThreeBoard = ({
   heights,
   hovered,
   onHover,
-  onColumnClick,
+  selected,
+  onSelect,
   lastMove,
   winIndices,
   locked,
@@ -95,21 +97,21 @@ const ThreeBoard = ({
   return (
     <div className="board-container">
       <Canvas shadows camera={{ position: [6, 6, 6], fov: 45 }}>
-        <ambientLight intensity={0.5} />
-        <directionalLight position={[6, 10, 6]} intensity={0.9} castShadow />
+        <ambientLight intensity={0.9} />
+        <directionalLight position={[6, 10, 6]} intensity={1.2} castShadow />
         <OrbitControls enablePan={false} />
         <group>
           <mesh position={[0, -3.2, 0]} receiveShadow>
             <boxGeometry args={[7, 0.3, 7]} />
-            <meshStandardMaterial color="#1c1f2a" />
+            <meshStandardMaterial color="#f8fafc" />
           </mesh>
           <lineSegments>
             <edgesGeometry args={[new THREE.BoxGeometry(6, 6, 6)]} />
-            <lineBasicMaterial color="#3b3f52" />
+            <lineBasicMaterial color="#cbd5f5" />
           </lineSegments>
           {columns.map((column) => {
-            const columnIndex = column.x + column.y * SIZE;
             const isHovered = hovered?.x === column.x && hovered?.y === column.y;
+            const isSelected = selected?.x === column.x && selected?.y === column.y;
             const pos = toWorld(column.x, column.y, 2);
             return (
               <mesh
@@ -117,13 +119,13 @@ const ThreeBoard = ({
                 position={[pos.x, pos.y, pos.z]}
                 onPointerOver={() => !locked && onHover(column)}
                 onPointerOut={() => !locked && onHover(null)}
-                onClick={() => !locked && onColumnClick(column.x, column.y)}
+                onClick={() => !locked && onSelect(column)}
               >
                 <boxGeometry args={[0.9, 6, 0.9]} />
                 <meshStandardMaterial
-                  color={isHovered ? '#5fe0d0' : '#4b4f65'}
+                  color={isSelected ? '#ffd36a' : isHovered ? '#7fdad1' : '#93a1bd'}
                   transparent
-                  opacity={isHovered ? 0.25 : 0.1}
+                  opacity={isSelected ? 0.35 : isHovered ? 0.25 : 0.12}
                 />
               </mesh>
             );

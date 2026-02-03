@@ -4,24 +4,51 @@ interface ControlsProps {
   mode: 'pvp' | 'ai';
   difficulty: Difficulty;
   humanFirst: boolean;
+  selectedMove: { x: number; y: number } | null;
+  selectedHeight: number | null;
+  isSelectedFull: boolean;
+  canConfirm: boolean;
+  isAnimating: boolean;
   onModeChange: (mode: 'pvp' | 'ai') => void;
   onDifficultyChange: (difficulty: Difficulty) => void;
   onHumanFirstChange: (humanFirst: boolean) => void;
   onReset: () => void;
+  onConfirmMove: () => void;
 }
 
 const Controls = ({
   mode,
   difficulty,
   humanFirst,
+  selectedMove,
+  selectedHeight,
+  isSelectedFull,
+  canConfirm,
+  isAnimating,
   onModeChange,
   onDifficultyChange,
   onHumanFirstChange,
-  onReset
+  onReset,
+  onConfirmMove
 }: ControlsProps) => {
+  const selectedText = selectedMove ? `已选择柱子：(${selectedMove.x}, ${selectedMove.y})` : '未选择柱子';
+  const heightText =
+    selectedMove && selectedHeight !== null
+      ? isSelectedFull
+        ? '该柱已满'
+        : `预计落点高度 z = ${selectedHeight}`
+      : '请选择柱子';
+
   return (
     <section className="controls">
       <h2>控制面板</h2>
+      <div className="selection-info">
+        <p className="selection-title">{selectedText}</p>
+        <p className={isSelectedFull ? 'selection-warning' : 'selection-detail'}>{heightText}</p>
+        <button type="button" className="confirm" onClick={onConfirmMove} disabled={!canConfirm}>
+          {isAnimating ? '落子动画中...' : '落子'}
+        </button>
+      </div>
       <div className="control-group">
         <label>模式</label>
         <div className="button-row">
