@@ -1,8 +1,5 @@
-import type { Difficulty } from '../engine/ai';
-
 interface ControlsProps {
   mode: 'pvp' | 'ai';
-  difficulty: Difficulty;
   humanFirst: boolean;
   timeControl: 'off' | '30' | '60';
   learningEnabled: boolean;
@@ -17,7 +14,6 @@ interface ControlsProps {
   canConfirm: boolean;
   isAnimating: boolean;
   onModeChange: (mode: 'pvp' | 'ai') => void;
-  onDifficultyChange: (difficulty: Difficulty) => void;
   onHumanFirstChange: (humanFirst: boolean) => void;
   onTimeControlChange: (value: 'off' | '30' | '60') => void;
   onLearningToggle: (value: boolean) => void;
@@ -32,7 +28,6 @@ interface ControlsProps {
 
 const Controls = ({
   mode,
-  difficulty,
   humanFirst,
   timeControl,
   learningEnabled,
@@ -47,7 +42,6 @@ const Controls = ({
   canConfirm,
   isAnimating,
   onModeChange,
-  onDifficultyChange,
   onHumanFirstChange,
   onTimeControlChange,
   onLearningToggle,
@@ -109,34 +103,17 @@ const Controls = ({
         />
       </div>
       {mode === 'ai' && (
-        <>
-          <div className="control-group">
-            <label>AI 难度</label>
-            <div className="button-row">
-              {(['easy', 'medium', 'hard'] as const).map((level) => (
-                <button
-                  key={level}
-                  type="button"
-                  className={difficulty === level ? 'active' : ''}
-                  onClick={() => onDifficultyChange(level)}
-                >
-                  {level.toUpperCase()}
-                </button>
-              ))}
-            </div>
+        <div className="control-group">
+          <label>先手</label>
+          <div className="button-row">
+            <button type="button" className={humanFirst ? 'active' : ''} onClick={() => onHumanFirstChange(true)}>
+              人类先手
+            </button>
+            <button type="button" className={!humanFirst ? 'active' : ''} onClick={() => onHumanFirstChange(false)}>
+              AI 先手
+            </button>
           </div>
-          <div className="control-group">
-            <label>先手</label>
-            <div className="button-row">
-              <button type="button" className={humanFirst ? 'active' : ''} onClick={() => onHumanFirstChange(true)}>
-                人类先手
-              </button>
-              <button type="button" className={!humanFirst ? 'active' : ''} onClick={() => onHumanFirstChange(false)}>
-                AI 先手
-              </button>
-            </div>
-          </div>
-        </>
+        </div>
       )}
       <div className="control-group">
         <label>计时模式</label>

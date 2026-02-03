@@ -1,15 +1,13 @@
-import type { Difficulty } from '../engine/ai';
-
 interface StatusBarProps {
   mode: 'pvp' | 'ai';
-  difficulty: Difficulty;
+  difficultyLabel: string;
   status: string;
   aiThinking: boolean;
   timeControl: 'off' | '30' | '60';
   timeLeft: string;
 }
 
-const StatusBar = ({ mode, difficulty, status, aiThinking, timeControl, timeLeft }: StatusBarProps) => {
+const StatusBar = ({ mode, difficultyLabel, status, aiThinking, timeControl, timeLeft }: StatusBarProps) => {
   return (
     <header className="status-bar">
       <div>
@@ -23,7 +21,7 @@ const StatusBar = ({ mode, difficulty, status, aiThinking, timeControl, timeLeft
       {mode === 'ai' && (
         <div>
           <strong>AI 难度：</strong>
-          {difficulty.toUpperCase()}
+          {difficultyLabel}
         </div>
       )}
       <div>

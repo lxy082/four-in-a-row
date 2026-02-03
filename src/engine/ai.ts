@@ -7,8 +7,6 @@ import { detectThreats } from './threat';
 import { softmaxSample } from './random';
 import { columnIndex } from './memory';
 
-export type Difficulty = 'easy' | 'medium' | 'hard';
-
 export interface AiResult {
   move: { x: number; y: number } | null;
   depth: number;
@@ -70,14 +68,6 @@ const findImmediateBlock = (engine: Engine, player: Player, profile?: ProfileDat
     }
   }
   return null;
-};
-
-const chooseRandomTop = (moves: Array<{ x: number; y: number }>, k: number) => {
-  if (moves.length === 0) {
-    return null;
-  }
-  const slice = moves.slice(0, Math.min(k, moves.length));
-  return slice[Math.floor(Math.random() * slice.length)];
 };
 
 const isSafeMove = (engine: Engine, move: { x: number; y: number }, player: Player) => {
@@ -146,20 +136,10 @@ const negamax = (
   return best;
 };
 
-export const computeBestMove = (
-  engine: Engine,
-  player: Player,
-  difficulty: Difficulty,
-  options: AiOptions = {}
-): AiResult => {
-  const config =
-    difficulty === 'easy'
-      ? { maxDepth: 1, timeLimit: 80 }
-      : difficulty === 'medium'
-      ? { maxDepth: 4, timeLimit: 500 }
-      : { maxDepth: 6, timeLimit: 1200 };
+export const computeBestMove = (engine: Engine, player: Player, options: AiOptions = {}): AiResult => {
+  const config = { maxDepth: 6, timeLimit: 1200 };
 
-  const hardLimit = options.hardLimitMs ?? 25000;
+  const hardLimit = options.hardLimitMs ?? 30000;
   const timeLimit = Math.min(options.timeLimitMs ?? config.timeLimit, hardLimit);
 
   if (engine.moves === 0) {
@@ -197,7 +177,7 @@ export const computeBestMove = (
       y: entry.y,
       score: entry.score
     }));
-    const sampled = softmaxSample(topMemory, difficulty === 'hard' ? 0.6 : 0.9);
+    const sampled = softmaxSample(topMemory, 0.6);
     if (sampled) {
       return { move: { x: sampled.x, y: sampled.y }, depth: 1 };
     }
@@ -249,19 +229,6 @@ export const computeBestMove = (
     }
   }
 
-  if (difficulty === 'easy') {
-    const moves = orderedMoves(engine, options.profile);
-    const scored = moves.map((move) => ({
-      ...move,
-      score: -Math.abs(move.x - 2) - Math.abs(move.y - 2)
-    }));
-    const top = scored.slice(0, Math.min(5, scored.length));
-    const sampled = softmaxSample(top, 1.4);
-    if (sampled) {
-      return { move: { x: sampled.x, y: sampled.y }, depth: 1 };
-    }
-  }
-
   if (!bestMove) {
     const moves = orderedMoves(engine, options.profile);
     bestMove = moves[0] ?? null;
@@ -270,9 +237,9 @@ export const computeBestMove = (
   const randomIntensity = options.randomIntensity ?? 0.4;
   if (bestMove && randomIntensity > 0) {
     const moves = orderedMoves(engine, options.profile);
-    const topN = difficulty === 'easy' ? 5 : difficulty === 'medium' ? 4 : 3;
+    const topN = 3;
     const candidates = moves.slice(0, Math.min(topN, moves.length));
-    const safe = candidates.filter((move) => (difficulty === 'easy' ? true : isSafeMove(engine, move, player)));
+    const safe = candidates.filter((move) => isSafeMove(engine, move, player));
     const scored = (safe.length > 0 ? safe : candidates).map((move) => {
       const sim = engine.makeMove(move.x, move.y, player);
       const score = sim.ok ? evaluateGrid(engine.grid, player, options.weights) : -Infinity;
@@ -281,7 +248,7 @@ export const computeBestMove = (
       }
       return { ...move, score };
     });
-    const temperature = difficulty === 'hard' ? 0.7 : difficulty === 'medium' ? 0.9 : 1.2;
+    const temperature = 0.7;
     const sampled = softmaxSample(scored, temperature + randomIntensity);
     if (sampled) {
       return { move: { x: sampled.x, y: sampled.y }, depth: lastCompletedDepth };

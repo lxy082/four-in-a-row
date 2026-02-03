@@ -3,12 +3,12 @@ import { computeBestMove } from './engine/ai';
 
 self.onmessage = (event) => {
   try {
-    const { grid, player, difficulty, timeLimitMs, weights, profile, memoryMoves, randomIntensity, randomSeed } = event.data;
+    const { grid, player, timeLimitMs, weights, profile, memoryMoves, randomIntensity, randomSeed } = event.data;
     const engine = new Engine();
     engine.loadPosition(new Int8Array(grid));
-    const result = computeBestMove(engine, player, difficulty, {
+    const result = computeBestMove(engine, player, {
       timeLimitMs,
-      hardLimitMs: 25000,
+      hardLimitMs: 30000,
       weights,
       profile,
       memoryMoves,

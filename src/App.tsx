@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Engine, type Player } from './engine/board';
-import type { Difficulty } from './engine/ai';
 import type { Weights } from './engine/weights';
 import Controls from './ui/Controls';
 import StatusBar from './ui/StatusBar';
@@ -19,7 +18,7 @@ const App = () => {
   const [version, setVersion] = useState(0);
   const [currentTurn, setCurrentTurn] = useState<Player>(1);
   const [mode, setMode] = useState<'pvp' | 'ai'>('pvp');
-  const [difficulty, setDifficulty] = useState<Difficulty>('medium');
+  const aiDifficultyLabel = 'HARD';
   const [humanFirst, setHumanFirst] = useState(true);
   const [humanPlayer, setHumanPlayer] = useState<Player>(1);
   const [aiPlayer, setAiPlayer] = useState<Player>(-1);
@@ -256,8 +255,7 @@ const App = () => {
     ) {
       return;
     }
-    const difficultyLimits = { easy: 200, medium: 1500, hard: 6000 } as const;
-    const baseLimit = difficultyLimits[difficulty];
+    const baseLimit = 30000;
     const remaining = timeLeftMs ?? null;
     const timeLimitMs = remaining ? Math.max(200, Math.min(baseLimit, remaining - 50)) : baseLimit;
     aiRequestRef.current = true;
@@ -293,7 +291,6 @@ const App = () => {
       heights: Array.from(engineRef.current.heights),
       moves: engineRef.current.moves,
       player: aiPlayerRef.current,
-      difficulty,
       timeLimitMs,
       weights,
       profile,
@@ -393,7 +390,7 @@ const App = () => {
     <div className="app">
       <StatusBar
         mode={mode}
-        difficulty={difficulty}
+        difficultyLabel={aiDifficultyLabel}
         status={statusText}
         aiThinking={aiThinking}
         timeControl={timeControl}
@@ -418,7 +415,6 @@ const App = () => {
         <div className="sidebar">
           <Controls
             mode={mode}
-            difficulty={difficulty}
             humanFirst={humanFirst}
             timeControl={timeControl}
             learningEnabled={learningEnabled}
@@ -435,7 +431,6 @@ const App = () => {
             onModeChange={(next) => {
               setMode(next);
             }}
-            onDifficultyChange={setDifficulty}
             onHumanFirstChange={(value) => {
               setHumanFirst(value);
             }}

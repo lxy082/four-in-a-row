@@ -186,10 +186,9 @@ class Engine {
 }
 
 // src/ui/Controls.tsx
-import { jsxDEV, Fragment } from "react/jsx-dev-runtime";
+import { jsxDEV } from "react/jsx-dev-runtime";
 var Controls = ({
   mode,
-  difficulty,
   humanFirst,
   timeControl,
   learningEnabled,
@@ -204,7 +203,6 @@ var Controls = ({
   canConfirm,
   isAnimating,
   onModeChange,
-  onDifficultyChange,
   onHumanFirstChange,
   onTimeControlChange,
   onLearningToggle,
@@ -301,48 +299,27 @@ var Controls = ({
           }, undefined, false, undefined, this)
         ]
       }, undefined, true, undefined, this),
-      mode === "ai" && /* @__PURE__ */ jsxDEV(Fragment, {
+      mode === "ai" && /* @__PURE__ */ jsxDEV("div", {
+        className: "control-group",
         children: [
+          /* @__PURE__ */ jsxDEV("label", {
+            children: "先手"
+          }, undefined, false, undefined, this),
           /* @__PURE__ */ jsxDEV("div", {
-            className: "control-group",
+            className: "button-row",
             children: [
-              /* @__PURE__ */ jsxDEV("label", {
-                children: "AI 难度"
+              /* @__PURE__ */ jsxDEV("button", {
+                type: "button",
+                className: humanFirst ? "active" : "",
+                onClick: () => onHumanFirstChange(true),
+                children: "人类先手"
               }, undefined, false, undefined, this),
-              /* @__PURE__ */ jsxDEV("div", {
-                className: "button-row",
-                children: ["easy", "medium", "hard"].map((level) => /* @__PURE__ */ jsxDEV("button", {
-                  type: "button",
-                  className: difficulty === level ? "active" : "",
-                  onClick: () => onDifficultyChange(level),
-                  children: level.toUpperCase()
-                }, level, false, undefined, this))
+              /* @__PURE__ */ jsxDEV("button", {
+                type: "button",
+                className: !humanFirst ? "active" : "",
+                onClick: () => onHumanFirstChange(false),
+                children: "AI 先手"
               }, undefined, false, undefined, this)
-            ]
-          }, undefined, true, undefined, this),
-          /* @__PURE__ */ jsxDEV("div", {
-            className: "control-group",
-            children: [
-              /* @__PURE__ */ jsxDEV("label", {
-                children: "先手"
-              }, undefined, false, undefined, this),
-              /* @__PURE__ */ jsxDEV("div", {
-                className: "button-row",
-                children: [
-                  /* @__PURE__ */ jsxDEV("button", {
-                    type: "button",
-                    className: humanFirst ? "active" : "",
-                    onClick: () => onHumanFirstChange(true),
-                    children: "人类先手"
-                  }, undefined, false, undefined, this),
-                  /* @__PURE__ */ jsxDEV("button", {
-                    type: "button",
-                    className: !humanFirst ? "active" : "",
-                    onClick: () => onHumanFirstChange(false),
-                    children: "AI 先手"
-                  }, undefined, false, undefined, this)
-                ]
-              }, undefined, true, undefined, this)
             ]
           }, undefined, true, undefined, this)
         ]
@@ -435,7 +412,7 @@ var Controls_default = Controls;
 
 // src/ui/StatusBar.tsx
 import { jsxDEV as jsxDEV2 } from "react/jsx-dev-runtime";
-var StatusBar = ({ mode, difficulty, status, aiThinking, timeControl, timeLeft }) => {
+var StatusBar = ({ mode, difficultyLabel, status, aiThinking, timeControl, timeLeft }) => {
   return /* @__PURE__ */ jsxDEV2("header", {
     className: "status-bar",
     children: [
@@ -463,7 +440,7 @@ var StatusBar = ({ mode, difficulty, status, aiThinking, timeControl, timeLeft }
           /* @__PURE__ */ jsxDEV2("strong", {
             children: "AI 难度："
           }, undefined, false, undefined, this),
-          difficulty.toUpperCase()
+          difficultyLabel
         ]
       }, undefined, true, undefined, this),
       /* @__PURE__ */ jsxDEV2("div", {
@@ -488,7 +465,7 @@ import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
-import { jsxDEV as jsxDEV3, Fragment as Fragment2 } from "react/jsx-dev-runtime";
+import { jsxDEV as jsxDEV3, Fragment } from "react/jsx-dev-runtime";
 var spacing = 1.2;
 var boardThickness = 0.4;
 var boardTop = -2.8;
@@ -651,7 +628,7 @@ var BoardScene = ({
       dom.removeEventListener("pointerleave", handlePointerLeave);
     };
   }, [camera, gl, locked, onHover, onSelect, pointer, raycaster]);
-  return /* @__PURE__ */ jsxDEV3(Fragment2, {
+  return /* @__PURE__ */ jsxDEV3(Fragment, {
     children: [
       /* @__PURE__ */ jsxDEV3("ambientLight", {
         intensity: 0.9
@@ -1021,7 +998,7 @@ var App = () => {
   const [version, setVersion] = useState(0);
   const [currentTurn, setCurrentTurn] = useState(1);
   const [mode, setMode] = useState("pvp");
-  const [difficulty, setDifficulty] = useState("medium");
+  const aiDifficultyLabel = "HARD";
   const [humanFirst, setHumanFirst] = useState(true);
   const [humanPlayer, setHumanPlayer] = useState(1);
   const [aiPlayer, setAiPlayer] = useState(-1);
@@ -1222,8 +1199,7 @@ var App = () => {
     if (aiThinking || aiRequestRef.current || gameStatus !== "playing" || isAnimating || currentTurn !== aiPlayerRef.current) {
       return;
     }
-    const difficultyLimits = { easy: 200, medium: 1500, hard: 6000 };
-    const baseLimit = difficultyLimits[difficulty];
+    const baseLimit = 30000;
     const remaining = timeLeftMs ?? null;
     const timeLimitMs = remaining ? Math.max(200, Math.min(baseLimit, remaining - 50)) : baseLimit;
     aiRequestRef.current = true;
@@ -1254,7 +1230,6 @@ var App = () => {
       heights: Array.from(engineRef.current.heights),
       moves: engineRef.current.moves,
       player: aiPlayerRef.current,
-      difficulty,
       timeLimitMs,
       weights,
       profile,
@@ -1335,7 +1310,7 @@ var App = () => {
     children: [
       /* @__PURE__ */ jsxDEV4(StatusBar_default, {
         mode,
-        difficulty,
+        difficultyLabel: aiDifficultyLabel,
         status: statusText,
         aiThinking,
         timeControl,
@@ -1370,7 +1345,6 @@ var App = () => {
             children: [
               /* @__PURE__ */ jsxDEV4(Controls_default, {
                 mode,
-                difficulty,
                 humanFirst,
                 timeControl,
                 learningEnabled,
@@ -1387,7 +1361,6 @@ var App = () => {
                 onModeChange: (next) => {
                   setMode(next);
                 },
-                onDifficultyChange: setDifficulty,
                 onHumanFirstChange: (value) => {
                   setHumanFirst(value);
                 },
